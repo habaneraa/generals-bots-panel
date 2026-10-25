@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GameState } from './state.js';
 
 function start(stars?: unknown) {
@@ -12,6 +12,117 @@ function start(stars?: unknown) {
   });
   return state;
 }
+
+afterEach(() => vi.useRealTimers());
+
+function terminalState() {
+  const state = new GameState();
+  state.update('game_start', {
+    game_type: '1v1',
+    replay_id: 'terminal-game',
+    playerIndex: 0,
+    usernames: ['self', 'opponent'],
+    stars: [10, 20],
+    turn: 1,
+    map: [2, 1, 10, 8, 0, 1],
+    scores: [
+      { i: 0, tiles: 1, total: 10 },
+      { i: 1, tiles: 1, total: 8 },
+    ],
+  });
+  return state;
+}
+
+const finalMetadata = {
+  replay_id: 'terminal-game',
+  winnerIndex: 0,
+  turn: 3,
+  stars: [11, 19],
+  scores: [
+    { i: 0, tiles: 2, total: 18 },
+    { i: 1, tiles: 0, total: 0 },
+  ],
+};
+
+describe('terminal event enrichment', () => {
+  it.each(['game_won', 'game_lost'] as const)(
+    'merges later game_over metadata while preserving the first %s result',
+    (event) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-25T00:00:00.000Z'));
+      const state = terminalState();
+      state.update(event);
+      const first = state.current();
+      vi.setSystemTime(new Date('2026-10-25T00:00:01.000Z'));
+      state.update('game_over', finalMetadata);
+      expect(state.current()).toMatchObject({
+        outcome: event === 'game_won' ? 'won' : 'lost',
+        endedAt: '2026-10-25T00:00:00.000Z',
+        winnerIndex: event === 'game_won' ? 0 : 1,
+        endReason: event,
+        turn: 2,
+        rating: { before: 10, after: 11, delta: 1, source: 'terminal' },
+        snapshot: {
+          turn: 2,
+          serverTurn: 3,
+          players: [
+            { stars: 11, land: 2, army: 18 },
+            { stars: 19, land: 0, army: 0 },
+          ],
+        },
+      });
+      expect(first).toMatchObject({ turn: 0, rating: { after: null } });
+      const enriched = structuredClone(state.current());
+      vi.setSystemTime(new Date('2026-10-25T00:00:02.000Z'));
+      state.update('game_over', finalMetadata);
+      state.update(event);
+      expect(state.current()).toEqual(enriched);
+      expect(state.getSnapshot()?.snapshot).toEqual(
+        enriched && 'outcome' in enriched ? enriched.snapshot : null,
+      );
+    },
+  );
+
+  it('prioritizes terminal stars over earlier and later public-profile samples', () => {
+    const state = terminalState();
+    state.update('game_won');
+    expect(state.setRatingAfter('terminal-game', 10.5, 'public-profile')).toBe(true);
+    state.update('game_over', finalMetadata);
+    expect(state.setRatingAfter('terminal-game', 12, 'public-profile')).toBe(false);
+    expect(state.current()).toMatchObject({
+      rating: { before: 10, after: 11, delta: 1, source: 'terminal' },
+    });
+  });
+
+  it.each(['replay_id', 'gameId', 'game_id'])(
+    'rejects terminal metadata from another game identified by %s',
+    (key) => {
+      const state = terminalState();
+      state.update('game_over', { ...finalMetadata, [key]: 'other-game' });
+      expect(state.current()).not.toHaveProperty('outcome');
+      state.update('game_won');
+      const first = structuredClone(state.current());
+      state.update('game_over', { ...finalMetadata, [key]: 'other-game' });
+      expect(state.current()).toEqual(first);
+    },
+  );
+
+  it('ignores invalid enrichment and nonterminal updates after completion', () => {
+    const state = terminalState();
+    state.update('game_won');
+    const first = structuredClone(state.current());
+    state.update('game_over', {
+      turn: -1,
+      stars: [NaN, -1],
+      scores: [
+        { i: 0, tiles: 2, total: 18 },
+        { i: 0, tiles: 0, total: 0 },
+      ],
+    });
+    state.update('game_update', { turn: 99, stars: [999, 999] });
+    expect(state.current()).toEqual(first);
+  });
+});
 
 describe('per-game self rating metadata', () => {
   it.each([

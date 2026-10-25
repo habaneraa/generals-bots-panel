@@ -51,6 +51,42 @@ async function connected(server: 'generals' | 'bots' = 'generals') {
 }
 
 describe('post-game public rating sampling', () => {
+  it('exposes the latest confirmed result synchronously after abort and close', async () => {
+    const request = vi.spyOn(globalThis, 'fetch');
+    const { game, controller } = await connected('bots');
+    expect(game.getResult()).toBeNull();
+    socket.event!('game_won', []);
+    const endedAt = game.getResult()?.endedAt;
+    controller.abort();
+    socket.event!('game_over', [
+      {
+        winnerIndex: 0,
+        turn: 3,
+        stars: [13.5, 98],
+        scores: [
+          { i: 0, tiles: 2, total: 18 },
+          { i: 1, tiles: 0, total: 0 },
+        ],
+      },
+    ]);
+    game.close();
+    expect(game.getResult()).toMatchObject({
+      gameId: 'rating-game',
+      outcome: 'won',
+      endedAt,
+      turn: 2,
+      winnerIndex: 0,
+      rating: { before: 12.5, after: 13.5, delta: 1, source: 'terminal' },
+      snapshot: {
+        players: [
+          { land: 2, army: 18 },
+          { land: 0, army: 0 },
+        ],
+      },
+    });
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('waits for the public sample before returning the terminal result', async () => {
     const request = vi
       .spyOn(globalThis, 'fetch')
@@ -90,6 +126,22 @@ describe('post-game public rating sampling', () => {
     const pending = game.next(0, controller.signal);
     controller.abort();
     expect(await pending).toMatchObject({ outcome: 'won', rating: { after: null, delta: null } });
+    expect(request).not.toHaveBeenCalled();
+    game.close();
+  });
+
+  it('returns terminal enrichment received while optional sampling is cancelled', async () => {
+    const request = vi.spyOn(globalThis, 'fetch');
+    const { game, controller } = await connected();
+    socket.event!('game_won', []);
+    const pending = game.next(0, controller.signal);
+    socket.event!('game_over', [{ winnerIndex: 0, turn: 3, stars: [13.5, 98] }]);
+    controller.abort();
+    expect(await pending).toMatchObject({
+      outcome: 'won',
+      turn: 2,
+      rating: { after: 13.5, delta: 1, source: 'terminal' },
+    });
     expect(request).not.toHaveBeenCalled();
     game.close();
   });

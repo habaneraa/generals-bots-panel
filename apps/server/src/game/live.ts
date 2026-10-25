@@ -219,7 +219,8 @@ export class SocketGame implements GameConnection {
     } catch {
       // Optional metadata must not turn a completed game into an interruption.
     }
-    return value;
+    const latest = this.getResult();
+    return latest?.gameId === value.gameId ? latest : value;
   }
 
   private collectStars(): void {

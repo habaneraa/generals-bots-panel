@@ -182,38 +182,51 @@ export class GameState {
       this.merge(data);
       return;
     }
-    if (!this.game || this.end) return;
-    if (event === 'game_update') {
+    if (!this.game) return;
+    if (event === 'game_update' && !this.end) {
       this.merge(record(payload, 'game_update'));
     } else if (event === 'game_won' || event === 'game_lost' || event === 'game_over') {
       // Only consume validated terminal metadata, never arbitrary result payloads.
       const game = this.game;
       const data = optionalRecord(payload);
+      if (
+        data &&
+        ['replay_id', 'gameId', 'game_id'].some(
+          (key) => data[key] !== undefined && data[key] !== game.id,
+        )
+      ) {
+        return;
+      }
       if (data) {
         if (validFinalScores(data.scores)) {
           const finalScores = data.scores;
+          const changed = finalScores.some((final) => {
+            const previous = game.scores.find((score) => score.i === final.i);
+            return previous?.tiles !== final.tiles || previous?.total !== final.total;
+          });
           game.scores = [
             ...game.scores.filter((score) => !finalScores.some((final) => final.i === score.i)),
             ...finalScores.map(({ i, tiles, total }) => ({ i, tiles, total })),
           ];
           // A final scoreboard does not make the previous map a final map.
           game.cityViewCurrent = false;
-          game.capturedAt = new Date().toISOString();
+          if (changed) game.capturedAt = new Date().toISOString();
         }
         if (
           typeof data.turn === 'number' &&
           Number.isSafeInteger(data.turn) &&
-          data.turn >= game.turn
+          data.turn > game.turn
         ) {
-          if (data.turn !== game.turn) game.cityViewCurrent = false;
+          game.cityViewCurrent = false;
           game.turn = data.turn;
           game.serverTurn = data.turn;
           game.capturedAt = new Date().toISOString();
         }
         this.mergeMetadata(data, true);
       }
-      const winnerIndex =
-        event === 'game_won'
+      const winnerIndex = this.end
+        ? this.end.winnerIndex
+        : event === 'game_won'
           ? game.player
           : event === 'game_lost'
             ? 1 - game.player
@@ -225,14 +238,16 @@ export class GameState {
         game.alive[1 - winnerIndex] = false;
       }
       const snapshot = this.snapshot();
-      // game_over often follows won/lost; produce exactly one terminal result.
+      // Later terminal events enrich metadata without replacing the first result.
       this.end = {
         gameId: game.id,
         startedAt: game.startedAt,
-        endedAt: new Date().toISOString(),
-        outcome: winnerIndex === undefined ? 'draw' : winnerIndex === game.player ? 'won' : 'lost',
+        endedAt: this.end?.endedAt ?? new Date().toISOString(),
+        outcome:
+          this.end?.outcome ??
+          (winnerIndex === undefined ? 'draw' : winnerIndex === game.player ? 'won' : 'lost'),
         turn: game.turn - 1,
-        endReason: event,
+        endReason: this.end?.endReason ?? event,
         ...(winnerIndex === undefined ? {} : { winnerIndex }),
         ...(snapshot ? { snapshot } : {}),
         rating: { ...game.rating },
@@ -347,7 +362,16 @@ export class GameState {
 
   setRatingAfter(gameId: string, stars: number, source: 'terminal' | 'public-profile'): boolean {
     const game = this.game;
-    if (!game || game.id !== gameId || !Number.isFinite(stars) || stars < 0) return false;
+    if (
+      !game ||
+      game.id !== gameId ||
+      !Number.isFinite(stars) ||
+      stars < 0 ||
+      (game.rating.source === 'terminal' && source !== 'terminal')
+    ) {
+      return false;
+    }
+    if (game.rating.after === stars && game.rating.source === source) return true;
     game.rating.after = stars;
     game.rating.source = source;
     game.rating.capturedAt = new Date().toISOString();
