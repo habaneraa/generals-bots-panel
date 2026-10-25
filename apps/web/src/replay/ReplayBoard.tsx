@@ -96,10 +96,14 @@ export function ReplayBoard({
       ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
       const image = images[type === 4 ? 0 : type === 3 ? 1 : 2];
       if ([2, 3, 4].includes(type) && image?.naturalWidth) {
-        const iconSize = type === 2 ? 32 : 25;
-        ctx.globalAlpha = army > 0 && type !== 2 ? 0.58 : 1;
-        ctx.drawImage(image, x + (CELL - iconSize) / 2, y + 2, iconSize, iconSize);
-        ctx.globalAlpha = 1;
+        const iconSize = 36;
+        ctx.drawImage(
+          image,
+          x + (CELL - iconSize) / 2,
+          y + (CELL - iconSize) / 2,
+          iconSize,
+          iconSize,
+        );
       }
       if (type === 5 && images[2]?.naturalWidth) {
         // Fogged mountains and cities are intentionally indistinguishable.
@@ -109,14 +113,18 @@ export function ReplayBoard({
       }
       if (army > 0 && type !== 0 && type !== 5) {
         const text = String(army);
-        ctx.font = `600 ${text.length > 4 ? 11 : 15}px Quicksand, sans-serif`;
-        ctx.fillStyle = owner >= 0 ? '#fff' : '#111827';
-        if (owner >= 0) {
-          ctx.strokeStyle = 'rgba(0,0,0,.55)';
-          ctx.lineWidth = 2.5;
-          ctx.strokeText(text, x + CELL / 2, y + (type === 3 || type === 4 ? 27 : 21));
-        }
-        ctx.fillText(text, x + CELL / 2, y + (type === 3 || type === 4 ? 27 : 21));
+        ctx.font = `600 ${text.length > 4 ? 11 : 13}px Quicksand, sans-serif`;
+        // Keep all army counts centered and light, including neutral cities.
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 2 * ratio * scale;
+        ctx.shadowOffsetX = ratio * scale;
+        ctx.shadowOffsetY = ratio * scale;
+        ctx.fillText(text, x + CELL / 2, y + CELL / 2);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
       }
     }
     // Paint oldest first: the current operation stays legible over its faded history.
