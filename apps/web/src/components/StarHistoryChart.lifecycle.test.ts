@@ -94,10 +94,84 @@ describe('StarHistoryChart lifecycle', () => {
     expect(engine.setOption).toHaveBeenCalledOnce();
     await act(async () => resize());
     expect(engine.init).toHaveBeenCalledOnce();
+    expect(engine.resize).not.toHaveBeenCalled();
+    Object.defineProperty(element, 'clientWidth', { value: 400, configurable: true });
+    await act(async () => resize());
+    expect(engine.resize).toHaveBeenCalledOnce();
+    await act(async () => resize());
     expect(engine.resize).toHaveBeenCalledOnce();
     await act(async () => root.render(null));
     expect(engine.dispose).toHaveBeenCalledOnce();
     expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the instance and tooltip untouched for equivalent history refreshes', async () => {
+    const element = await renderChart();
+    makeVisible(element);
+    await act(async () => {
+      resize();
+      await vi.dynamicImportSettled();
+    });
+    await act(async () =>
+      root.render(
+        createElement(StarHistoryChart, {
+          matches: matches.map((match) => ({
+            ...match,
+            turns: match.turns + 1,
+            rating: { ...match.rating! },
+          })),
+        }),
+      ),
+    );
+    expect(engine.init).toHaveBeenCalledOnce();
+    expect(engine.setOption).toHaveBeenCalledOnce();
+    expect(engine.dispose).not.toHaveBeenCalled();
+    expect(disconnect).not.toHaveBeenCalled();
+  });
+
+  it('updates actual ratings on the existing instance and replaces removed series', async () => {
+    const element = await renderChart();
+    makeVisible(element);
+    await act(async () => {
+      resize();
+      await vi.dynamicImportSettled();
+    });
+    const updated = { ...matches[0]!, rating: { ...matches[0]!.rating!, after: 12, delta: 2 } };
+    await act(async () =>
+      root.render(
+        createElement(StarHistoryChart, { matches: [updated, { ...updated, id: 'second' }] }),
+      ),
+    );
+    expect(engine.setOption).toHaveBeenCalledTimes(2);
+    expect(engine.setOption.mock.lastCall?.[0].series).toHaveLength(2);
+    await act(async () => root.render(createElement(StarHistoryChart, { matches: [updated] })));
+    expect(engine.init).toHaveBeenCalledOnce();
+    expect(engine.dispose).not.toHaveBeenCalled();
+    expect(engine.setOption).toHaveBeenCalledTimes(3);
+    expect(engine.setOption.mock.lastCall?.[0].series).toHaveLength(1);
+    expect(engine.setOption.mock.lastCall?.[0].series[0].data).toEqual([
+      [0, 10],
+      [1, 12],
+    ]);
+    expect(engine.setOption.mock.lastCall?.[1]).toEqual({ notMerge: true });
+  });
+
+  it('uses the newest ratings if history changes during the engine import', async () => {
+    const element = await renderChart();
+    makeVisible(element);
+    const updated = { ...matches[0]!, rating: { ...matches[0]!.rating!, after: 12, delta: 2 } };
+    act(() => {
+      resize();
+      root.render(createElement(StarHistoryChart, { matches: [updated] }));
+    });
+    await act(async () => vi.dynamicImportSettled());
+    expect(engine.init).toHaveBeenCalledOnce();
+    expect(engine.setOption).toHaveBeenCalledOnce();
+    expect(engine.setOption.mock.lastCall?.[0].series[0].data).toEqual([
+      [0, 10],
+      [1, 12],
+    ]);
+    expect(disconnect).not.toHaveBeenCalled();
   });
 
   it('does not initialize after an in-flight import outlives the component', async () => {

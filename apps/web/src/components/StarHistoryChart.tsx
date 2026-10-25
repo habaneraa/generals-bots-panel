@@ -84,16 +84,43 @@ function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
   const latestStars = latest.rating?.after;
   const delta = latest.rating?.delta ?? null;
 
+  const chartRef = useRef<EChartsType | null>(null);
+  const appliedSignature = useRef<string | null>(null);
+  const signature = JSON.stringify(
+    matches.map((match) => [
+      match.id,
+      match.gameId,
+      match.startedAt,
+      match.rating?.before,
+      match.rating?.after,
+      match.rating?.delta,
+    ]),
+  );
+  const latestData = useRef({ matches, signature });
+
+  useEffect(() => {
+    latestData.current = { matches, signature };
+    if (chartRef.current && appliedSignature.current !== signature) {
+      chartRef.current.setOption(starHistoryOption(matches), { notMerge: true });
+      appliedSignature.current = signature;
+    }
+  }, [matches, signature]);
+
   useEffect(() => {
     const element = container.current;
     if (!element) return;
     let chart: EChartsType | undefined;
     let disposed = false;
     let loading = false;
+    let width = 0;
+    let height = 0;
     setLoadError(false);
     const resize = () => {
       if (!element.clientWidth || !element.clientHeight) return;
       if (chart) {
+        if (width === element.clientWidth && height === element.clientHeight) return;
+        width = element.clientWidth;
+        height = element.clientHeight;
         chart.resize();
       } else if (!loading) {
         loading = true;
@@ -105,11 +132,18 @@ function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
               return;
             }
             chart = init(element);
-            chart.setOption(starHistoryOption(matches));
+            const current = latestData.current;
+            chart.setOption(starHistoryOption(current.matches), { notMerge: true });
+            chartRef.current = chart;
+            appliedSignature.current = current.signature;
+            width = element.clientWidth;
+            height = element.clientHeight;
           })
           .catch(() => {
             chart?.dispose();
             chart = undefined;
+            chartRef.current = null;
+            appliedSignature.current = null;
             if (!disposed) setLoadError(true);
           });
       }
@@ -121,8 +155,10 @@ function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
       disposed = true;
       observer.disconnect();
       chart?.dispose();
+      chartRef.current = null;
+      appliedSignature.current = null;
     };
-  }, [matches]);
+  }, []);
 
   return (
     <div className="min-w-0 rounded-[3px] border border-line bg-surface px-3 pt-2.5">
