@@ -385,6 +385,88 @@ describe('run lifecycle with isolated test inputs', () => {
     });
   });
 
+  it.each([
+    { resource: 'game', failure: new Error('game close failed') },
+    { resource: 'game', failure: 'game close failed' },
+    { resource: 'agent', failure: new Error('agent close failed') },
+    { resource: 'agent', failure: 'agent close failed' },
+  ])(
+    'records $resource cleanup failures without losing their cause ($failure)',
+    async ({ resource, failure }) => {
+      const game = new FixtureGame();
+      const closeGame = vi.spyOn(game, 'close');
+      const agent = {
+        begin: vi.fn(),
+        act: vi.fn(async () => ({
+          pass: true,
+          row: 0,
+          col: 0,
+          direction: 0,
+          split: false,
+          value: null,
+        })),
+        end: vi.fn(),
+        close: vi.fn(async () => {}),
+      };
+      if (resource === 'game')
+        closeGame.mockImplementation(() => {
+          throw failure;
+        });
+      else agent.close.mockRejectedValue(failure);
+      vi.spyOn(AgentProcess, 'start').mockResolvedValue(agent as unknown as AgentProcess);
+      const { controller, repository } = setup(game);
+      controller.start(defaultConfig);
+      await idle(controller);
+      const message = `${resource} close failed`;
+      const context = resource === 'game' ? '关闭游戏连接失败' : '关闭 agent 进程失败';
+      expect(controller.dashboard().state).toMatchObject({
+        phase: 'failed',
+        run: { error: message },
+      });
+      expect(controller.dashboard().logs).toContainEqual(
+        expect.objectContaining({
+          level: 'error',
+          message: `${context}：${message}`,
+        }),
+      );
+      expect(closeGame).toHaveBeenCalledOnce();
+      expect(agent.close).toHaveBeenCalledOnce();
+      expect(repository.stats()).toMatchObject({ won: 1, interrupted: 0 });
+    },
+  );
+
+  it('retains the original failure while reporting both cleanup failures', async () => {
+    const game = new FixtureGame();
+    vi.spyOn(game, 'close').mockImplementation(() => {
+      throw 'game close failed';
+    });
+    const agent = {
+      begin: vi.fn(),
+      act: vi.fn(async () => {
+        throw new Error('inference failed');
+      }),
+      close: vi.fn(async () => {
+        throw 'agent close failed';
+      }),
+    };
+    vi.spyOn(AgentProcess, 'start').mockResolvedValue(agent as unknown as AgentProcess);
+    const { controller } = setup(game);
+    controller.start(defaultConfig);
+    await idle(controller);
+    const dashboard = controller.dashboard();
+    expect(dashboard.state).toMatchObject({ phase: 'failed', run: { error: 'inference failed' } });
+    expect(
+      dashboard.logs.filter((entry) => entry.level === 'error').map((entry) => entry.message),
+    ).toEqual(
+      expect.arrayContaining([
+        'inference failed',
+        '关闭游戏连接失败：game close failed',
+        '关闭 agent 进程失败：agent close failed',
+      ]),
+    );
+    expect(agent.close).toHaveBeenCalledOnce();
+  });
+
   it('validates requests and rejects cross-site command execution', async () => {
     const { controller } = setup();
     const app = await createApp(controller, resolve('nonexistent-web'));

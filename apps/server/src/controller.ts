@@ -20,7 +20,7 @@ import {
   type GameFactory,
   type GameFrame,
 } from './game/types.js';
-import { HttpError } from './errors.js';
+import { HttpError, toError } from './errors.js';
 import { RunLog } from './storage/logs.js';
 import { ReplayRecorder } from './game/recorder.js';
 import { ReplayStore, finishReplay } from './storage/replays.js';
@@ -265,10 +265,7 @@ export class Controller {
       this.repository.putMatch(match);
       this.notify();
     } catch (error) {
-      this.writeLog(
-        'warn',
-        `本地录像保存失败：${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.writeLog('warn', `本地录像保存失败：${toError(error).message}`);
     }
   }
 
@@ -386,7 +383,7 @@ export class Controller {
       }
     } catch (error) {
       if (!signal.aborted) {
-        failed = error instanceof Error ? error : new Error(String(error));
+        failed = toError(error);
         this.writeLog('error', failed.message);
       }
     } finally {
@@ -414,17 +411,21 @@ export class Controller {
         }
       }
       if (match) this.repository.putMatch(match);
-      // Close the game first so a slow external process cannot leave matchmaking active.
+      // 先离开游戏，避免外部进程关闭缓慢时仍留在匹配队列。
       try {
         game?.close();
       } catch (error) {
-        failed ??= error as Error;
+        const cleanupError = toError(error);
+        failed ??= cleanupError;
+        this.writeLog('error', `关闭游戏连接失败：${cleanupError.message}`);
       }
       if (match) await this.saveReplay(match, game, fallback);
       try {
         await agent?.close();
       } catch (error) {
-        failed ??= error as Error;
+        const cleanupError = toError(error);
+        failed ??= cleanupError;
+        this.writeLog('error', `关闭 agent 进程失败：${cleanupError.message}`);
       }
       this.state.nextGameAt = null;
       this.state.run!.endedAt = new Date().toISOString();
@@ -432,7 +433,7 @@ export class Controller {
       this.setPhase(failed ? 'failed' : 'stopped');
       this.writeLog(
         failed ? 'error' : 'info',
-        failed ? '运行失败，资源已关闭' : '运行已停止，资源已关闭',
+        failed ? '运行失败，已尝试关闭资源' : '运行已停止，资源已关闭',
       );
     }
   }
