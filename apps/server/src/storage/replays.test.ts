@@ -5,13 +5,14 @@ import { join, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultConfig } from '../../../../packages/contracts/src/index.js';
-import { parseReplay, ReplayTimeline } from '../../../../packages/contracts/src/replay.js';
+import { parseReplay } from '../../../../packages/contracts/src/replay.js';
 import { fixtureObservation, FixtureGame } from '../../../../test/fixtures/game.js';
 import { createApp } from '../app.js';
 import { Controller } from '../controller.js';
-import type { GameConnection, GameEnd, GameFrame, SubmitStatus } from '../game/types.js';
+import type { GameConnection, GameEnd, GameFrame } from '../game/types.js';
 import { Repository } from './repository.js';
-import { ReplayRecorder, ReplayStore } from './replays.js';
+import { ReplayRecorder } from '../game/recorder.js';
+import { ReplayStore } from './replays.js';
 
 const cleanups: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -35,72 +36,8 @@ function recorded() {
   recorder.capture(frame());
   return recorder.getReplay()!;
 }
-const action = { pass: false, row: 0, col: 0, direction: 3, split: true, value: 0.5 };
 
-describe('perspective capture and isolated replay storage', () => {
-  it('captures full boards, deltas and 64-frame keyframes using raw player IDs', () => {
-    const recorder = new ReplayRecorder('bots');
-    for (let turn = 0; turn < 66; turn++) {
-      const next = frame(turn);
-      next.observation.armies[0]![0] = turn + 10;
-      next.observation.types[0]![1] = 0;
-      next.observation.player_grid[0]![1] = -3;
-      next.observation.armies[0]![1] = 999;
-      recorder.capture(next);
-    }
-    const replay = parseReplay(recorder.getReplay());
-    expect(replay.frames[0]!.keyframe!.slice(0, 6)).toEqual([4, 0, 10, 0, -3, 0]);
-    expect(replay.frames[1]!.delta).toEqual([0, 4, 0, 11]);
-    expect(replay.frames[64]!.keyframe).toHaveLength(27);
-    expect(new ReplayTimeline(replay).seek(65).cells[2]).toBe(75);
-    expect(JSON.stringify(replay)).not.toContain('account');
-  });
-
-  it.each(['sent', 'stale', 'rejected', 'dry-run'] as SubmitStatus[])(
-    'records %s once against the decision frame',
-    (status) => {
-      const recorder = new ReplayRecorder('bots');
-      const first = frame();
-      recorder.capture(first);
-      recorder.capture(frame(1));
-      recorder.recordAction(first, action, status);
-      recorder.recordAction(first, { ...action, pass: true }, 'pass');
-      expect(parseReplay(recorder.getReplay()).actions).toEqual([
-        { frame: 0, turn: 0, player: 0, from: 0, to: 1, split: true, status },
-      ]);
-    },
-  );
-
-  it('keeps same-turn decisions tied to their source board, not the latest update', () => {
-    const recorder = new ReplayRecorder('bots');
-    const first = frame();
-    recorder.capture(first);
-    const updated = frame();
-    updated.observation.armies[0]![0] = 99;
-    recorder.capture(updated);
-    recorder.recordAction(first, action, 'sent');
-    const replay = parseReplay(recorder.getReplay());
-    expect(first.replayFrameIndex).toBe(0);
-    expect(updated.replayFrameIndex).toBe(1);
-    expect(replay.actions[0]!.frame).toBe(0);
-    const timeline = new ReplayTimeline(replay);
-    expect(timeline.seek(0).cells[2]).toBe(10);
-    expect(timeline.seek(1).cells[2]).toBe(99);
-  });
-
-  it('uses an earlier keyframe when a delta would be larger than the full board', () => {
-    const recorder = new ReplayRecorder('bots');
-    recorder.capture(frame());
-    const updated = frame(1);
-    updated.observation.armies = updated.observation.armies.map((row) =>
-      row.map((army) => army + 1),
-    );
-    recorder.capture(updated);
-    const replay = parseReplay(recorder.getReplay());
-    expect(replay.frames[1]!.keyframe).toHaveLength(27);
-    expect(replay.frames[1]!.delta).toBeUndefined();
-  });
-
+describe('isolated replay storage', () => {
   it('stores gzip atomically in the selected server and game directory and reloads it', async () => {
     const dir = directory();
     const store = new ReplayStore(dir);
@@ -118,13 +55,6 @@ describe('perspective capture and isolated replay storage', () => {
     expect(statSync(store.path('bots', replay.gameId)).mode & 0o777).toBe(0o600);
     expect(() => store.path('bots', '../secret')).toThrow();
     expect(() => store.path('bad' as 'bots', 'recorded-game')).toThrow();
-  });
-
-  it('retains the valid prefix if an incoming turn moves backwards', () => {
-    const recorder = new ReplayRecorder('bots');
-    recorder.capture(frame(1));
-    expect(() => recorder.capture(frame(0))).toThrow('backwards');
-    expect(parseReplay(recorder.getReplay()).frames.map((entry) => entry.turn)).toEqual([1]);
   });
 
   it('rejects invalid data without replacing an existing recording', async () => {

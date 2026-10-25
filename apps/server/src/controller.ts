@@ -22,7 +22,8 @@ import {
 } from './game/types.js';
 import { HttpError } from './errors.js';
 import { RunLog } from './storage/logs.js';
-import { ReplayRecorder, ReplayStore, finishReplay } from './storage/replays.js';
+import { ReplayRecorder } from './game/recorder.js';
+import { ReplayStore, finishReplay } from './storage/replays.js';
 import type { Repository } from './storage/repository.js';
 
 export class Controller {

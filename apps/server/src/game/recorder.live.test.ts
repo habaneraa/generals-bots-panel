@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseReplay, ReplayTimeline } from '../../../../packages/contracts/src/replay.js';
-import { SocketGame } from '../game/live.js';
-import { isGameEnd } from '../game/types.js';
+import { SocketGame } from './live.js';
+import { isGameEnd } from './types.js';
 
 const socket = vi.hoisted(() => ({
   event: null as ((event: string, args: unknown[]) => void) | null,
   joined: 0,
   sent: [] as unknown[][],
 }));
-vi.mock('../game/socket.js', () => ({
+vi.mock('./socket.js', () => ({
   abortError: (signal: AbortSignal) => signal.reason,
   GameSocket: class {
     constructor(_endpoint: string, callbacks: { event: typeof socket.event }) {

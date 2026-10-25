@@ -13,6 +13,19 @@ export default tseslint.config(
     rules: { '@typescript-eslint/consistent-type-imports': 'error' },
   },
   {
+    files: ['apps/server/src/game/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            { group: ['**/storage/**'], message: '游戏层只负责连接与内存状态，不依赖磁盘存储。' },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/web/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: reactHooks.configs.recommended.rules,

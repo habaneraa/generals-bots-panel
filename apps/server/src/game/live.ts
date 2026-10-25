@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { GameSocket, abortError } from './socket.js';
 import { GameState } from './state.js';
 import { fetchDuelStars } from './ratings.js';
-import { ReplayRecorder } from '../storage/replays.js';
+import { ReplayRecorder } from './recorder.js';
 import { isGameEnd } from './types.js';
 import type { AgentAction, GameConnection, GameEnd, GameFrame, SubmitStatus } from './types.js';
 
