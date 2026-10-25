@@ -14,6 +14,7 @@ import {
 import { AgentProcess } from './agent/process.js';
 import { SocketGame } from './game/live.js';
 import {
+  frameIdentity,
   isGameEnd,
   type GameConnection,
   type GameEnd,
@@ -312,23 +313,12 @@ export class Controller {
           began = true;
           this.setPhase('playing');
           this.writeLog('info', `对局开始：${match.gameId} · 对手 ${match.opponent}`);
-          const identity = JSON.stringify([
-            current.gameId,
-            current.observation.player_id,
-            current.observation.types.length,
-            current.observation.types[0]?.length,
-          ]);
+          const identity = frameIdentity(current);
           let lastTurn = -1;
           while (!isGameEnd(current)) {
             signal.throwIfAborted();
             const frame = current;
-            const frameIdentity = JSON.stringify([
-              frame.gameId,
-              frame.observation.player_id,
-              frame.observation.types.length,
-              frame.observation.types[0]?.length,
-            ]);
-            if (frameIdentity !== identity || frame.observation.turn <= lastTurn) {
+            if (frameIdentity(frame) !== identity || frame.observation.turn <= lastTurn) {
               throw new Error('服务器对局身份变化或回合倒退');
             }
             if (frame.snapshot) details.last = structuredClone(frame.snapshot);

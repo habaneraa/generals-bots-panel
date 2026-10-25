@@ -3,7 +3,7 @@ import { GameSocket, abortError } from './socket.js';
 import { GameState } from './state.js';
 import { fetchDuelStars } from './ratings.js';
 import { ReplayRecorder } from './recorder.js';
-import { isGameEnd } from './types.js';
+import { frameIdentity, isGameEnd } from './types.js';
 import type { AgentAction, GameConnection, GameEnd, GameFrame, SubmitStatus } from './types.js';
 
 const SERVERS = {
@@ -18,11 +18,6 @@ const DIRECTIONS = [
   [0, -1],
   [0, 1],
 ] as const;
-
-function identity(frame: GameFrame): string {
-  const view = frame.observation;
-  return JSON.stringify([frame.gameId, view.player_id, view.types.length, view.types[0]!.length]);
-}
 
 /** Direct game connection. Chrome, CDP and browser scheduling are not involved. */
 export class SocketGame implements GameConnection {
@@ -118,7 +113,7 @@ export class SocketGame implements GameConnection {
     }
     const value = await this.waitFor(() => this.state.current(), 3_600_000, signal);
     this.gameId = value.gameId;
-    if (!isGameEnd(value)) this.gameIdentity = identity(value);
+    if (!isGameEnd(value)) this.gameIdentity = frameIdentity(value);
     return this.finishRating(value, signal);
   }
 
@@ -151,7 +146,7 @@ export class SocketGame implements GameConnection {
         if (!value) return null;
         if (
           value.gameId !== this.gameId ||
-          (!isGameEnd(value) && this.gameIdentity !== identity(value))
+          (!isGameEnd(value) && this.gameIdentity !== frameIdentity(value))
         ) {
           throw new Error('The controlled game changed before its result was received');
         }
@@ -173,7 +168,7 @@ export class SocketGame implements GameConnection {
       !current ||
       isGameEnd(current) ||
       current.gameId !== frame.gameId ||
-      identity(current) !== identity(frame) ||
+      frameIdentity(current) !== frameIdentity(frame) ||
       current.observation.turn !== frame.observation.turn
     ) {
       return 'stale';

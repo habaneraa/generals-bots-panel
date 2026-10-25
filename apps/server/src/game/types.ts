@@ -78,3 +78,9 @@ export type GameFactory = (config: RunConfig) => Promise<GameConnection>;
 export function isGameEnd(value: GameFrame | GameEnd): value is GameEnd {
   return 'outcome' in value;
 }
+
+export function frameIdentity(frame: GameFrame): string {
+  // 回合和兵力会持续变化，不能用于识别同一局；视角与地图尺寸必须保持固定。
+  const view = frame.observation;
+  return JSON.stringify([frame.gameId, view.player_id, view.types.length, view.types[0]?.length]);
+}
