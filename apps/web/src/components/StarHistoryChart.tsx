@@ -1,15 +1,9 @@
-import { LineChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent } from 'echarts/components';
-import { init, use as registerECharts } from 'echarts/core';
-import type { EChartsCoreOption } from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
+import type { EChartsCoreOption, EChartsType } from 'echarts/core';
 import { TrendingUp } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
 import { formatDateTime } from '../lib/format';
 import { formatStars, starChangeTone } from './StarChange';
-
-registerECharts([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
 
 export function groupStarHistory(matches: MatchRecord[]): Map<string, MatchRecord[]> {
   const groups = new Map<string, MatchRecord[]>();
@@ -85,6 +79,7 @@ export function starHistoryOption(matches: MatchRecord[]): EChartsCoreOption {
 
 function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
   const container = useRef<HTMLDivElement>(null);
+  const [loadError, setLoadError] = useState(false);
   const first = matches[0]!;
   const latest = matches.at(-1)!;
   const latestStars = latest.rating?.after;
@@ -93,18 +88,38 @@ function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    let chart: ReturnType<typeof init> | undefined;
+    let chart: EChartsType | undefined;
+    let disposed = false;
+    let loading = false;
+    setLoadError(false);
     const resize = () => {
       if (!element.clientWidth || !element.clientHeight) return;
-      if (!chart) {
-        chart = init(element);
-        chart.setOption(starHistoryOption(matches));
-      } else chart.resize();
+      if (chart) {
+        chart.resize();
+      } else if (!loading) {
+        loading = true;
+        void import('../lib/starChartEngine')
+          .then(({ init }) => {
+            if (disposed) return;
+            if (!element.clientWidth || !element.clientHeight) {
+              loading = false;
+              return;
+            }
+            chart = init(element);
+            chart.setOption(starHistoryOption(matches));
+          })
+          .catch(() => {
+            chart?.dispose();
+            chart = undefined;
+            if (!disposed) setLoadError(true);
+          });
+      }
     };
     const observer = new ResizeObserver(resize);
     observer.observe(element);
     resize();
     return () => {
+      disposed = true;
       observer.disconnect();
       chart?.dispose();
     };
@@ -120,6 +135,11 @@ function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
           最近赛后 {latestStars == null ? '未记录' : `${formatStars(latestStars)} ★`}
         </span>
       </div>
+      {loadError && (
+        <p role="status" className="py-2 text-[11px] text-danger">
+          图表加载失败，请刷新页面重试；下方对局列表仍可查看评分。
+        </p>
+      )}
       <div
         ref={container}
         className="h-48 w-full"
