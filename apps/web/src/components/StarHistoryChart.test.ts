@@ -57,8 +57,8 @@ describe('StarChange', () => {
     expect(renderChange(record)).toContain('0.0 → 0.0');
     expect(renderChange(record)).not.toContain('未记录');
     Object.assign(record.rating!, { after: null, delta: null });
-    expect(renderChange(record)).toContain('未记录');
-    expect(renderChange(record)).toContain('0.0 → —');
+    expect(renderChange(record)).toContain('缺赛后值');
+    expect(renderChange(record)).toContain('赛前 0.0，赛后 —');
     delete record.rating;
     expect(renderChange(record)).toContain('未记录');
   });

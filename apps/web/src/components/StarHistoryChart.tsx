@@ -3,7 +3,7 @@ import { TrendingUp } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
 import { formatDateTime } from '../lib/format';
-import { formatStars, starChangeTone } from './StarChange';
+import { formatStars, starChangePresentation, starChangeTone } from './StarChange';
 
 export function groupStarHistory(matches: MatchRecord[]): Map<string, MatchRecord[]> {
   const groups = new Map<string, MatchRecord[]>();
@@ -46,15 +46,13 @@ export function starHistoryOption(matches: MatchRecord[]): EChartsCoreOption {
           : rating.delta > 0
             ? '#15803d'
             : '#dc2626';
-      const change =
-        rating.delta === null
-          ? '未记录'
-          : `${rating.delta > 0 ? '+' : ''}${formatStars(rating.delta)}`;
+      const change = starChangePresentation(rating);
+      const incomparable = rating.delta === null && rating.before !== null && rating.after !== null;
       return {
         type: 'line',
         name: match.gameId || match.id,
         data: [
-          [index, rating.before],
+          [index, incomparable ? null : rating.before],
           [index + 1, rating.after],
         ],
         connectNulls: false,
@@ -69,7 +67,8 @@ export function starHistoryOption(matches: MatchRecord[]): EChartsCoreOption {
               `对局 ${match.gameId || match.id}`,
               `赛前 ${rating.before === null ? '—' : formatStars(rating.before)}`,
               `赛后 ${rating.after === null ? '—' : formatStars(rating.after)}`,
-              `Star 变化 ${change}`,
+              `Star 变化 ${change.label}`,
+              ...(change.note ? [change.note] : []),
             ].join('\n'),
         },
       };

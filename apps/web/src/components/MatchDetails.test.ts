@@ -149,6 +149,44 @@ describe('MatchDetails', () => {
     expect(html).toContain('Star 0');
   });
 
+  it('does not imply a gain for the actual lost game with incomparable observations', () => {
+    const match = matchRecord();
+    match.outcome = 'lost';
+    match.details!.endReason = 'game_lost';
+    match.rating = {
+      username: 'self-player',
+      before: 84,
+      after: 84.25927300637274,
+      delta: null,
+      source: 'public-profile',
+      capturedAt: '2026-10-25T15:05:12.853Z',
+    };
+    const html = render(match);
+    expect(html).toContain('game_lost');
+    expect(html).toContain('不可比较');
+    expect(html).toContain('采样来源或精度不一致');
+    expect(html).not.toContain('84.0 → 84.3');
+    expect(html).not.toContain('+0.3');
+  });
+
+  it('shows a precise loss normally instead of treating every public sample as incomparable', () => {
+    const match = matchRecord();
+    match.outcome = 'lost';
+    match.details!.endReason = 'game_lost';
+    match.rating = {
+      username: 'self-player',
+      before: 84.25927300637274,
+      after: 84.05996045942692,
+      delta: -0.19931254694581924,
+      source: 'public-profile',
+      capturedAt: '2026-10-25T15:07:39.809Z',
+    };
+    const html = render(match);
+    expect(html).toContain('-0.2');
+    expect(html).toContain('84.3 → 84.1');
+    expect(html).not.toContain('不可比较');
+  });
+
   it('renders unknown city counts as missing instead of zero', () => {
     const html = render(matchRecord());
     expect(html).toContain('服务器未提供或视野不完整时显示为 —');
