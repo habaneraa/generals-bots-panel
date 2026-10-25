@@ -13,10 +13,11 @@ export function MatchDetailsModal({
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const matchId = match?.id;
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (!match || !dialog) return;
+    if (!matchId || !dialog) return;
 
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
@@ -30,7 +31,7 @@ export function MatchDetailsModal({
       document.body.style.overflow = previousOverflow;
       previous?.focus();
     };
-  }, [match]);
+  }, [matchId]);
 
   if (!match) return null;
   const replay = replayHref(match.replayUrl);

@@ -133,7 +133,10 @@ export function MatchHistory({ refreshKey }: Props) {
         </div>
       </footer>
 
-      <MatchDetailsModal match={selected} onClose={() => setSelected(null)} />
+      <MatchDetailsModal
+        match={data?.items.find((match) => match.id === selected?.id) ?? selected}
+        onClose={() => setSelected(null)}
+      />
     </section>
   );
 }
