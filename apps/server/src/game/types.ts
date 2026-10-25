@@ -2,6 +2,7 @@ import type {
   RunConfig,
   Outcome,
   MatchSnapshot,
+  MatchRating,
 } from '../../../../packages/contracts/src/index.js';
 
 export interface Player {
@@ -37,13 +38,16 @@ export interface GameFrame {
   observation: Observation;
   attackIndex: number;
   snapshot?: MatchSnapshot;
+  rating?: MatchRating;
 }
 export interface GameEnd {
   gameId: string;
   startedAt?: string;
+  endedAt?: string;
   outcome: Exclude<Outcome, 'interrupted'>;
   turn: number;
   snapshot?: MatchSnapshot;
+  rating?: MatchRating;
   winnerIndex?: number;
   endReason?: string;
 }
@@ -57,7 +61,7 @@ export interface AgentAction {
 }
 export type SubmitStatus = 'sent' | 'pass' | 'stale' | 'rejected' | 'dry-run';
 export interface GameConnection {
-  getSnapshot?(): { gameId: string; snapshot: MatchSnapshot } | null;
+  getSnapshot?(): { gameId: string; snapshot: MatchSnapshot; rating?: MatchRating } | null;
   connect(signal: AbortSignal): Promise<void>;
   join(signal: AbortSignal): Promise<GameFrame | GameEnd>;
   next(lastTurn: number, signal: AbortSignal): Promise<GameFrame | GameEnd>;

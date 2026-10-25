@@ -1,4 +1,4 @@
-import type { MatchSnapshot } from '../../../../packages/contracts/src/index.js';
+import type { MatchRating, MatchSnapshot } from '../../../../packages/contracts/src/index.js';
 import type { GameEnd, GameFrame, Observation } from './types.js';
 
 function optionalRecord(value: unknown): Record<string, unknown> | null {
@@ -88,6 +88,7 @@ interface ActiveGame {
   deserts: number[];
   swamps: number[];
   stars: (number | null)[];
+  rating: MatchRating;
   alive: (boolean | null)[];
   knownCities: Set<number>;
   citiesKnown: boolean;
@@ -162,6 +163,14 @@ export class GameState {
         deserts: [],
         swamps: [],
         stars: [null, null],
+        rating: {
+          username: usernames[player] || null,
+          before: null,
+          after: null,
+          delta: null,
+          source: null,
+          capturedAt: null,
+        },
         alive: [null, null],
         knownCities: new Set(),
         citiesKnown: false,
@@ -201,7 +210,7 @@ export class GameState {
           game.serverTurn = data.turn;
           game.capturedAt = new Date().toISOString();
         }
-        this.mergeMetadata(data);
+        this.mergeMetadata(data, true);
       }
       const winnerIndex =
         event === 'game_won'
@@ -220,11 +229,13 @@ export class GameState {
       this.end = {
         gameId: game.id,
         startedAt: game.startedAt,
+        endedAt: new Date().toISOString(),
         outcome: winnerIndex === undefined ? 'draw' : winnerIndex === game.player ? 'won' : 'lost',
         turn: game.turn - 1,
         endReason: event,
         ...(winnerIndex === undefined ? {} : { winnerIndex }),
         ...(snapshot ? { snapshot } : {}),
+        rating: { ...game.rating },
       };
     }
   }
@@ -282,7 +293,7 @@ export class GameState {
     this.mergeMetadata(data);
   }
 
-  private mergeMetadata(data: Record<string, unknown>): void {
+  private mergeMetadata(data: Record<string, unknown>, terminal = false): void {
     const game = this.game!;
     // No public player ID field is established by the legacy client. In particular,
     // SocketGame.userId and stars_and_rank identify a login, not a public player.
@@ -290,6 +301,10 @@ export class GameState {
       data.stars.forEach((value, index) => {
         if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
           game.stars[index] = value;
+          if (index === game.player) {
+            if (terminal) this.setRatingAfter(game.id, value, 'terminal');
+            else game.rating.before ??= value;
+          }
         }
       });
     }
@@ -318,6 +333,7 @@ export class GameState {
       return false;
     }
     game.stars[index] = stars;
+    if (!this.end && index === game.player) game.rating.before ??= stars;
     if (this.end?.snapshot) {
       this.end.snapshot = {
         ...this.end.snapshot,
@@ -329,9 +345,22 @@ export class GameState {
     return true;
   }
 
-  getSnapshot(): { gameId: string; snapshot: MatchSnapshot } | null {
+  setRatingAfter(gameId: string, stars: number, source: 'terminal' | 'public-profile'): boolean {
+    const game = this.game;
+    if (!game || game.id !== gameId || !Number.isFinite(stars) || stars < 0) return false;
+    game.rating.after = stars;
+    game.rating.source = source;
+    game.rating.capturedAt = new Date().toISOString();
+    game.rating.delta = game.rating.before === null ? null : stars - game.rating.before;
+    if (this.end) this.end.rating = { ...game.rating };
+    return true;
+  }
+
+  getSnapshot(): { gameId: string; snapshot: MatchSnapshot; rating: MatchRating } | null {
     const snapshot = this.snapshot();
-    return this.game && snapshot ? { gameId: this.game.id, snapshot } : null;
+    return this.game && snapshot
+      ? { gameId: this.game.id, snapshot, rating: { ...this.game.rating } }
+      : null;
   }
 
   private snapshot(): MatchSnapshot | null {
@@ -485,6 +514,7 @@ export class GameState {
       observation,
       attackIndex: game.attackIndex,
       snapshot: this.snapshot()!,
+      rating: { ...game.rating },
     };
   }
 }

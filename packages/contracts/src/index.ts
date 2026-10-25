@@ -77,6 +77,19 @@ export interface MatchDetails {
   endReason: string | null;
   agent: MatchAgentStats;
 }
+/** Self player's 1v1 stars; unknown values are never inferred from the outcome. */
+export interface MatchRating {
+  username: string | null;
+  /** First observed stars before the terminal event. */
+  before: number | null;
+  /** Terminal stars or a post-game public profile sample, which may lag settlement. */
+  after: number | null;
+  source: 'terminal' | 'public-profile' | null;
+  /** Time the after value was observed. */
+  capturedAt: string | null;
+  /** after - before, only when both values are known. */
+  delta: number | null;
+}
 export interface MatchRecord {
   id: string;
   runId: string;
@@ -90,6 +103,7 @@ export interface MatchRecord {
   turns: number;
   replayUrl: string | null;
   details?: MatchDetails;
+  rating?: MatchRating;
 }
 export interface RunRecord {
   id: string;

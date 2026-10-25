@@ -165,6 +165,23 @@ export class Controller {
       outcome: null,
       turns: Math.max(0, (isGameEnd(frame) ? frame.turn : frame.observation.turn) + 1),
       replayUrl: `https://${config.server === 'bots' ? 'bot.' : ''}generals.io/replays/${encodeURIComponent(frame.gameId)}`,
+      rating: structuredClone(
+        frame.rating ?? {
+          username:
+            snapshot?.players.find((player) => player.isSelf)?.username ??
+            (!isGameEnd(frame)
+              ? frame.observation.players.find((player) => player.relation === 'self')?.username
+              : null) ??
+            null,
+          before: !isGameEnd(frame)
+            ? (snapshot?.players.find((player) => player.isSelf)?.stars ?? null)
+            : null,
+          after: null,
+          source: null,
+          capturedAt: null,
+          delta: null,
+        },
+      ),
       details: {
         initial: isGameEnd(frame) ? null : structuredClone(snapshot),
         last: structuredClone(snapshot),
@@ -192,7 +209,10 @@ export class Controller {
     if (!match.details) return;
     try {
       const latest = game?.getSnapshot?.();
-      if (latest?.gameId === match.gameId) match.details.last = structuredClone(latest.snapshot);
+      if (latest?.gameId === match.gameId) {
+        match.details.last = structuredClone(latest.snapshot);
+        if (latest.rating) match.rating = structuredClone(latest.rating);
+      }
     } catch {
       // Retain the last valid snapshot if a server update was malformed.
     }
@@ -255,6 +275,7 @@ export class Controller {
               throw new Error('服务器对局身份变化或回合倒退');
             }
             if (frame.snapshot) details.last = structuredClone(frame.snapshot);
+            if (frame.rating) match.rating = structuredClone(frame.rating);
             details.agent.observations++;
             this.state.turn = frame.observation.turn;
             match.turns = Math.max(match.turns, frame.observation.turn + 1);
@@ -289,9 +310,10 @@ export class Controller {
         }
         if (current.gameId !== match.gameId) throw new Error('终局与当前对局不匹配');
         match.outcome = current.outcome;
-        match.endedAt = new Date().toISOString();
+        match.endedAt = current.endedAt ?? new Date().toISOString();
         match.turns = Math.max(match.turns, current.turn + 1);
         if (current.snapshot) details.last = structuredClone(current.snapshot);
+        if (current.rating) match.rating = structuredClone(current.rating);
         details.durationMs =
           began || current.startedAt
             ? Math.max(0, Date.parse(match.endedAt) - Date.parse(match.startedAt))

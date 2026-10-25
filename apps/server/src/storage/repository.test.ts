@@ -75,6 +75,31 @@ describe('local persistence', () => {
     repo.close();
   });
 
+  it('preserves rating payloads across restart without inventing values for old records', () => {
+    const dir = temp();
+    let repo = new Repository(dir);
+    const record = {
+      ...match('rated', 'won'),
+      rating: {
+        username: 'self',
+        before: 0,
+        after: 0.5,
+        delta: 0.5,
+        source: 'public-profile' as const,
+        capturedAt: '2026-10-25T00:01:00.000Z',
+      },
+    };
+    repo.putMatch(match('legacy', 'lost'));
+    repo.putMatch(record);
+    repo.close();
+    repo = new Repository(dir);
+    expect(repo.matches().items.find((entry) => entry.id === 'rated')).toEqual(record);
+    expect(repo.matches().items.find((entry) => entry.id === 'legacy')).not.toHaveProperty(
+      'rating',
+    );
+    repo.close();
+  });
+
   it('hides legacy demo records without modifying or deleting their physical data', () => {
     const dir = temp();
     let repo = new Repository(dir);

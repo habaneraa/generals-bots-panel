@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { GameSocket, abortError } from './socket.js';
 import { GameState } from './state.js';
 import { fetchDuelStars } from './ratings.js';
@@ -104,7 +105,7 @@ export class SocketGame implements GameConnection {
     const value = await this.waitFor(() => this.state.current(), 3_600_000, signal);
     this.gameId = value.gameId;
     if (!isGameEnd(value)) this.gameIdentity = identity(value);
-    return value;
+    return this.finishRating(value, signal);
   }
 
   getSnapshot() {
@@ -135,7 +136,7 @@ export class SocketGame implements GameConnection {
       },
       40_000,
       signal,
-    );
+    ).then((value) => this.finishRating(value, signal));
   }
 
   submit(frame: GameFrame, action: AgentAction): SubmitStatus {
@@ -191,6 +192,29 @@ export class SocketGame implements GameConnection {
     // Sent is not executed: next() waits for the server's attackIndex to catch up.
     this.socket.emit('attack', row * width + col, targetRow * width + targetCol, split, index);
     return 'sent';
+  }
+
+  private async finishRating(
+    value: GameFrame | GameEnd,
+    signal: AbortSignal,
+  ): Promise<GameFrame | GameEnd> {
+    if (!isGameEnd(value) || this.server !== 'generals' || value.rating?.after !== null)
+      return value;
+    const username = value.rating?.username;
+    if (!username?.trim()) return value;
+    // Finish before requeueing. Public profiles may still lag the actual settlement.
+    const samplingSignal = AbortSignal.any([signal, this.ratingsAbort.signal]);
+    try {
+      await delay(750, undefined, { signal: samplingSignal });
+      const stars = await fetchDuelStars(username, samplingSignal);
+      if (!samplingSignal.aborted && stars !== null) {
+        this.state.setRatingAfter(value.gameId, stars, 'public-profile');
+        return this.state.current() ?? value;
+      }
+    } catch {
+      // Optional metadata must not turn a completed game into an interruption.
+    }
+    return value;
   }
 
   private collectStars(): void {

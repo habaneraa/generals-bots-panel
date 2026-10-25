@@ -159,6 +159,61 @@ describe('run lifecycle with isolated test inputs', () => {
     expect(record?.details).toMatchObject({ winnerIndex: 0, endReason: 'game_won' });
   });
 
+  it('persists per-game rating and exposes it through history and dashboard APIs', async () => {
+    const rating = {
+      username: 'self fixture',
+      before: 12.5,
+      after: 13.25,
+      delta: 0.75,
+      source: 'public-profile' as const,
+      capturedAt: '2026-10-25T00:01:00.000Z',
+    };
+    class RatingGame extends FixtureGame {
+      override async join(signal: AbortSignal) {
+        return { ...(await super.join(signal)), startedAt: '2026-10-25T00:00:00.000Z' };
+      }
+      override async next(turn: number, signal: AbortSignal) {
+        return { ...(await super.next(turn, signal)), rating, endedAt: '2026-10-25T00:00:59.000Z' };
+      }
+    }
+    const { controller, repository } = setup(new RatingGame());
+    controller.start(defaultConfig);
+    await idle(controller);
+    expect(repository.matches().items[0]?.rating).toEqual(rating);
+    expect(repository.matches().items[0]).toMatchObject({
+      endedAt: '2026-10-25T00:00:59.000Z',
+      details: { durationMs: 59000 },
+    });
+    const app = await createApp(controller, resolve('nonexistent-web'));
+    cleanups.push(async () => {
+      await app.close();
+    });
+    const headers = { host: '127.0.0.1:3000' };
+    const history = await app.inject({ url: '/api/matches', headers });
+    expect(history.statusCode).toBe(200);
+    expect(history.json().items[0].rating).toEqual(rating);
+    const dashboard = await app.inject({ url: '/api/dashboard', headers });
+    expect(dashboard.json().matches[0].rating).toEqual(rating);
+  });
+
+  it('keeps a completed outcome when stop cancels terminal metadata sampling', async () => {
+    class StoppingGame extends FixtureGame {
+      override async next(turn: number, signal: AbortSignal) {
+        const result = await super.next(turn, signal);
+        void controller.stop();
+        return result;
+      }
+    }
+    const { controller, repository } = setup(new StoppingGame());
+    controller.start(defaultConfig);
+    await idle(controller);
+    expect(repository.matches().items[0]).toMatchObject({
+      outcome: 'won',
+      rating: { after: null, delta: null },
+    });
+    expect(repository.stats()).toMatchObject({ won: 1, interrupted: 0 });
+  });
+
   it('captures the latest snapshot after an agent failure', async () => {
     class LatestGame extends FixtureGame {
       private gameId = '';
@@ -179,6 +234,12 @@ describe('run lifecycle with isolated test inputs', () => {
       details: { endReason: 'error', agent: { observations: 0, decisions: 0 } },
     });
     expect(repository.matches().items[0]?.details?.last?.players[0]?.land).toBe(2);
+    expect(repository.matches().items[0]?.rating).toMatchObject({
+      username: 'self fixture',
+      before: 12.5,
+      after: null,
+      delta: null,
+    });
   });
 
   it('records a game ending before an actionable frame without starting an agent', async () => {
