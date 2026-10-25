@@ -58,6 +58,39 @@ describe('public rating metadata without network', () => {
     expect(await pending).toBeNull();
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it('diagnoses the currently rejected numeric-string response without changing parsing', async () => {
+    const debug = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json({ stars: { duel: '83.876173960723037' } }),
+    );
+    expect(await fetchDuelStars('player', new AbortController().signal, debug)).toBeNull();
+    expect(debug).toHaveBeenCalledWith('request attempt=1 timeoutMs=2000');
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('status=200 elapsedMs='));
+    expect(debug).toHaveBeenCalledWith('parsed stars.duel type=string value="83.876173960723037"');
+    expect(debug).toHaveBeenCalledWith('result=null reason=invalid-stars.duel');
+  });
+
+  it('reports successful zero ratings', async () => {
+    const debug = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ stars: { duel: 0 } }));
+    expect(await fetchDuelStars('player', new AbortController().signal, debug)).toBe(0);
+    expect(debug).toHaveBeenCalledWith('parsed stars.duel type=number value=0');
+    expect(debug).toHaveBeenCalledWith('result=0 reason=ok');
+  });
+
+  it('reports timeout attempts without copying raw errors into diagnostics', async () => {
+    const debug = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+      new DOMException('private-account-id', 'TimeoutError'),
+    );
+    expect(await fetchDuelStars('player', new AbortController().signal, debug)).toBeNull();
+    expect(debug).toHaveBeenCalledWith(
+      expect.stringContaining('attempt=3 reason=TimeoutError aborted=false'),
+    );
+    expect(debug).toHaveBeenCalledWith('result=null reason=retries-exhausted');
+    expect(JSON.stringify(debug.mock.calls)).not.toContain('private-account-id');
+  });
+
   it('ignores unsuccessful HTTP responses', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 503 }));
     expect(await fetchDuelStars('player', new AbortController().signal)).toBeNull();

@@ -42,8 +42,11 @@ afterEach(() => {
   socket.stars = [12.5, 99];
 });
 
-async function connected(server: 'generals' | 'bots' = 'generals') {
-  const game = new SocketGame(server, 'private-account-id');
+async function connected(
+  server: 'generals' | 'bots' = 'generals',
+  debug?: (message: string) => void,
+) {
+  const game = new SocketGame(server, 'private-account-id', undefined, debug);
   const controller = new AbortController();
   await game.connect(controller.signal);
   await game.join(controller.signal);
@@ -85,6 +88,28 @@ describe('post-game public rating sampling', () => {
       },
     });
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it('logs the game, phase, skipped opening lookup and rejected post-game value', async () => {
+    const debug = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ stars: { duel: '13.25' } }));
+    const { game, controller } = await connected('generals', debug);
+    socket.event!('game_won', []);
+    expect(await game.next(0, controller.signal)).toMatchObject({
+      outcome: 'won',
+      rating: { before: 12.5, after: null, delta: null },
+    });
+    expect(debug).toHaveBeenCalledWith(
+      '[rating] game=rating-game phase=before player=0 self=true lookup skipped stars=12.5 reason=existing-snapshot-stars',
+    );
+    expect(debug).toHaveBeenCalledWith(
+      '[rating] game=rating-game phase=after parsed stars.duel type=string value="13.25"',
+    );
+    expect(debug).toHaveBeenCalledWith(
+      '[rating] game=rating-game phase=after sampling finished after=null delta=null source=null aborted=false',
+    );
+    expect(JSON.stringify(debug.mock.calls)).not.toContain('private-account-id');
+    game.close();
   });
 
   it('waits for the public sample before returning the terminal result', async () => {

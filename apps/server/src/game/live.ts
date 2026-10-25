@@ -225,23 +225,43 @@ export class SocketGame implements GameConnection {
     value: GameFrame | GameEnd,
     signal: AbortSignal,
   ): Promise<GameFrame | GameEnd> {
-    if (!isGameEnd(value) || this.server !== 'generals' || value.rating?.after !== null)
+    if (!isGameEnd(value)) return value;
+    const debug = (message: string) =>
+      this.log?.(`[rating] game=${value.gameId} phase=after ${message}`);
+    debug(
+      `snapshot before=${value.rating?.before ?? null} after=${value.rating?.after ?? null} source=${value.rating?.source ?? null} server=${this.server}`,
+    );
+    if (this.server !== 'generals' || value.rating?.after !== null) {
+      debug(
+        `sampling skipped reason=${this.server !== 'generals' ? 'non-public-server' : 'existing-or-unavailable-rating'}`,
+      );
       return value;
+    }
     const username = value.rating?.username;
-    if (!username?.trim()) return value;
+    if (!username?.trim()) {
+      debug('sampling skipped reason=missing-username');
+      return value;
+    }
     // Finish before requeueing. Public profiles may still lag the actual settlement.
     const samplingSignal = AbortSignal.any([signal, this.ratingsAbort.signal]);
     try {
+      debug('sampling waitMs=750');
       await delay(750, undefined, { signal: samplingSignal });
-      const stars = await fetchDuelStars(username, samplingSignal);
+      const stars = await fetchDuelStars(username, samplingSignal, debug);
       if (!samplingSignal.aborted && stars !== null) {
-        this.state.setRatingAfter(value.gameId, stars, 'public-profile');
-        return this.state.current() ?? value;
+        const applied = this.state.setRatingAfter(value.gameId, stars, 'public-profile');
+        const latest = this.state.current();
+        debug(`sample applied=${applied} stars=${stars} delta=${latest?.rating?.delta ?? null}`);
+        return latest ?? value;
       }
     } catch {
       // Optional metadata must not turn a completed game into an interruption.
+      debug(`sampling interrupted aborted=${samplingSignal.aborted}`);
     }
     const latest = this.getResult();
+    debug(
+      `sampling finished after=${latest?.rating?.after ?? null} delta=${latest?.rating?.delta ?? null} source=${latest?.rating?.source ?? null} aborted=${samplingSignal.aborted}`,
+    );
     return latest?.gameId === value.gameId ? latest : value;
   }
 
@@ -253,12 +273,28 @@ export class SocketGame implements GameConnection {
     const controller = (this.ratingsAbort = new AbortController());
     this.ratingsGameId = current.gameId;
     for (const player of current.snapshot.players) {
-      if (player.stars !== null || !player.username?.trim()) continue;
+      const debug = (message: string) =>
+        this.log?.(
+          `[rating] game=${current.gameId} phase=before player=${player.index} self=${player.isSelf} ${message}`,
+        );
+      if (player.stars !== null || !player.username?.trim()) {
+        debug(
+          `lookup skipped stars=${player.stars} reason=${player.stars !== null ? 'existing-snapshot-stars' : 'missing-username'}`,
+        );
+        continue;
+      }
       // Public usernames only; ratings never participate in game scheduling.
-      void fetchDuelStars(player.username, controller.signal)
+      void fetchDuelStars(player.username, controller.signal, debug)
         .then((stars) => {
-          if (controller.signal.aborted || this.closed || stars === null) return;
-          if (this.state.setPlayerStars(current.gameId, player.index, stars)) this.notify();
+          if (controller.signal.aborted || this.closed || stars === null) {
+            debug(
+              `sample ignored stars=${stars} aborted=${controller.signal.aborted} closed=${this.closed}`,
+            );
+            return;
+          }
+          const applied = this.state.setPlayerStars(current.gameId, player.index, stars);
+          debug(`sample applied=${applied} stars=${stars}`);
+          if (applied) this.notify();
         })
         .catch(() => undefined);
     }
