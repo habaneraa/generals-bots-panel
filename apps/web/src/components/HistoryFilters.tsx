@@ -86,11 +86,8 @@ export function HistoryFilters({ onApply }: { onApply: (filters: MatchFilters) =
           筛选条件
         </span>
         <div className="flex items-center gap-2">
-          <span className="hidden text-[10px] text-faint sm:inline">
-            按全部真实记录筛选，时间使用本地时区
-          </span>
           <button
-            className="btn btn-secondary btn-sm lg:hidden"
+            className="btn btn-secondary btn-sm"
             type="button"
             aria-expanded={filtersOpen}
             aria-controls="history-filter-fields"
@@ -102,10 +99,7 @@ export function HistoryFilters({ onApply }: { onApply: (filters: MatchFilters) =
         </div>
       </div>
 
-      <div
-        id="history-filter-fields"
-        className={filtersOpen ? 'mt-3 block' : 'mt-3 hidden lg:block'}
-      >
+      <div id="history-filter-fields" className="mt-3" hidden={!filtersOpen}>
         <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-4">
           <ConfigField id="history-server" label="服务器" error={errors.server}>
             <select {...input('server')} className="select">
