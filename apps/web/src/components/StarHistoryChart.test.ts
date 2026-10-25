@@ -39,7 +39,7 @@ describe('StarChange', () => {
     const html = renderChange(match());
     expect(html).toContain('text-green-700');
     expect(html).toContain('+1.5');
-    expect(html).toContain('12 → 13.5');
+    expect(html).toContain('12.0 → 13.5');
   });
 
   it('highlights losses in red and preserves a real zero rating', () => {
@@ -47,18 +47,18 @@ describe('StarChange', () => {
     Object.assign(record.rating!, { before: 1, after: 0, delta: -1 });
     const html = renderChange(record);
     expect(html).toContain('text-red-600');
-    expect(html).toContain('-1');
-    expect(html).toContain('1 → 0');
+    expect(html).toContain('-1.0');
+    expect(html).toContain('1.0 → 0.0');
   });
 
   it('distinguishes no change from missing measurements and old records', () => {
     const record = match();
     Object.assign(record.rating!, { before: 0, after: 0, delta: 0 });
-    expect(renderChange(record)).toContain('0 → 0');
+    expect(renderChange(record)).toContain('0.0 → 0.0');
     expect(renderChange(record)).not.toContain('未记录');
     Object.assign(record.rating!, { after: null, delta: null });
     expect(renderChange(record)).toContain('未记录');
-    expect(renderChange(record)).toContain('0 → —');
+    expect(renderChange(record)).toContain('0.0 → —');
     delete record.rating;
     expect(renderChange(record)).toContain('未记录');
   });

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SocketGame } from './live.js';
 
 const socket = vi.hoisted(() => ({
@@ -36,6 +36,10 @@ vi.mock('./socket.js', () => ({
     close() {}
   },
 }));
+
+beforeEach(() => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 404 }));
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -90,36 +94,40 @@ describe('post-game public rating sampling', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it('logs the game, phase, skipped opening lookup and rejected post-game value', async () => {
+  it('uses precise numeric-string samples even when the server supplies rounded stars', async () => {
+    socket.stars = [84, 99];
     const debug = vi.fn();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ stars: { duel: '13.25' } }));
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ stars: { duel: '83.876173960723037' } }))
+      .mockResolvedValueOnce(Response.json({ stars: { duel: '84.117323068167025' } }));
     const { game, controller } = await connected('generals', debug);
+    await vi.waitFor(() => expect(game.getSnapshot()?.rating.before).toBe(83.876173960723037));
     socket.event!('game_won', []);
-    expect(await game.next(0, controller.signal)).toMatchObject({
+    const result = await game.next(0, controller.signal);
+    expect(result).toMatchObject({
       outcome: 'won',
-      rating: { before: 12.5, after: null, delta: null },
+      rating: { before: 83.876173960723037, after: 84.117323068167025, source: 'public-profile' },
     });
+    expect(result.rating?.delta).toBeCloseTo(0.241149107443988, 10);
+    expect(game.getSnapshot()?.snapshot.players[0]?.stars).toBe(84);
     expect(debug).toHaveBeenCalledWith(
-      '[rating] game=rating-game phase=before player=0 self=true lookup skipped stars=12.5 reason=existing-snapshot-stars',
-    );
-    expect(debug).toHaveBeenCalledWith(
-      '[rating] game=rating-game phase=after parsed stars.duel type=string value="13.25"',
-    );
-    expect(debug).toHaveBeenCalledWith(
-      '[rating] game=rating-game phase=after sampling finished after=null delta=null source=null aborted=false',
+      '[rating] game=rating-game phase=after parsed stars.duel type=string value="84.117323068167025"',
     );
     expect(JSON.stringify(debug.mock.calls)).not.toContain('private-account-id');
     game.close();
   });
 
   it('waits for the public sample before returning the terminal result', async () => {
+    socket.stars = [13, 99];
     const request = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(Response.json({ stars: { duel: 13.25 } }));
+      .mockResolvedValueOnce(Response.json({ stars: { duel: 12.5 } }))
+      .mockResolvedValueOnce(Response.json({ stars: { duel: 13.25 } }));
     const { game, controller } = await connected();
+    await vi.waitFor(() => expect(game.getSnapshot()?.rating.before).toBe(12.5));
     socket.event!('game_won', []);
     const pending = game.next(0, controller.signal);
-    expect(request).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(1);
     expect(await pending).toMatchObject({
       outcome: 'won',
       rating: {
@@ -140,7 +148,7 @@ describe('post-game public rating sampling', () => {
     socket.event!('game_lost', kind === 'terminal' ? [{ stars: [11.5, 100] }] : []);
     const result = await game.next(0, controller.signal);
     expect(result).toMatchObject({ rating: { after: kind === 'terminal' ? 11.5 : null } });
-    expect(request).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(kind === 'bots' ? 0 : 1);
     game.close();
   });
 
@@ -151,7 +159,7 @@ describe('post-game public rating sampling', () => {
     const pending = game.next(0, controller.signal);
     controller.abort();
     expect(await pending).toMatchObject({ outcome: 'won', rating: { after: null, delta: null } });
-    expect(request).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(1);
     game.close();
   });
 
@@ -167,8 +175,46 @@ describe('post-game public rating sampling', () => {
       turn: 2,
       rating: { after: 13.5, delta: 1, source: 'terminal' },
     });
-    expect(request).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledTimes(1);
     game.close();
+  });
+
+  it('does not turn a late opening response into a precise baseline after the game', async () => {
+    socket.stars = [84, 99];
+    let resolveOpening!: (response: Response) => void;
+    const opening = new Promise<Response>((resolve) => {
+      resolveOpening = resolve;
+    });
+    const debug = vi.fn();
+    vi.spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(opening)
+      .mockResolvedValueOnce(Response.json({ stars: { duel: '84.117323068167025' } }));
+    const { game, controller } = await connected('generals', debug);
+    socket.event!('game_won', []);
+    const pending = game.next(0, controller.signal);
+    resolveOpening(Response.json({ stars: { duel: '83.876173960723037' } }));
+    const result = await pending;
+    expect(result.rating).toMatchObject({ before: 84, after: 84.117323068167025, delta: null });
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('baselineApplied=false'));
+    game.close();
+  });
+
+  it('ignores an opening response received after close', async () => {
+    let resolveOpening!: (response: Response) => void;
+    const opening = new Promise<Response>((resolve) => {
+      resolveOpening = resolve;
+    });
+    const debug = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockReturnValueOnce(opening);
+    const { game } = await connected('generals', debug);
+    game.close();
+    resolveOpening(Response.json({ stars: { duel: '13.25' } }));
+    await vi.waitFor(() =>
+      expect(debug).toHaveBeenCalledWith(
+        expect.stringContaining('sample ignored stars=13.25 aborted=true closed=true'),
+      ),
+    );
+    expect(game.getSnapshot()?.rating.before).toBe(12.5);
   });
 
   it('samples after even if the opening rating was unavailable', async () => {
@@ -201,7 +247,10 @@ describe('post-game public rating sampling', () => {
   });
 
   it('leaves failed public lookups unknown after bounded retries', async () => {
-    const request = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+    const request = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockRejectedValue(new Error('offline'));
     const { game, controller } = await connected();
     socket.event!('game_lost', []);
     const pending = game.next(0, controller.signal);
@@ -209,7 +258,7 @@ describe('post-game public rating sampling', () => {
       outcome: 'lost',
       rating: { before: 12.5, after: null, delta: null },
     });
-    expect(request).toHaveBeenCalledTimes(3);
+    expect(request).toHaveBeenCalledTimes(4);
     game.close();
   });
 });

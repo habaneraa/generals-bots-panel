@@ -89,6 +89,7 @@ interface ActiveGame {
   swamps: number[];
   stars: (number | null)[];
   rating: MatchRating;
+  ratingBeforeSource: 'game-event' | 'public-profile' | null;
   alive: (boolean | null)[];
   knownCities: Set<number>;
   citiesKnown: boolean;
@@ -171,6 +172,7 @@ export class GameState {
           source: null,
           capturedAt: null,
         },
+        ratingBeforeSource: null,
         alive: [null, null],
         knownCities: new Set(),
         citiesKnown: false,
@@ -318,7 +320,10 @@ export class GameState {
           game.stars[index] = value;
           if (index === game.player) {
             if (terminal) this.setRatingAfter(game.id, value, 'terminal');
-            else game.rating.before ??= value;
+            else if (game.rating.before === null) {
+              game.rating.before = value;
+              game.ratingBeforeSource = 'game-event';
+            }
           }
         }
       });
@@ -348,7 +353,7 @@ export class GameState {
       return false;
     }
     game.stars[index] = stars;
-    if (!this.end && index === game.player) game.rating.before ??= stars;
+    if (index === game.player) this.setRatingBefore(gameId, stars);
     if (this.end?.snapshot) {
       this.end.snapshot = {
         ...this.end.snapshot,
@@ -357,6 +362,24 @@ export class GameState {
         ),
       };
     }
+    return true;
+  }
+
+  /** Prefer the first exact public sample, but never introduce a baseline after the game. */
+  setRatingBefore(gameId: string, stars: number): boolean {
+    const game = this.game;
+    if (
+      !game ||
+      game.id !== gameId ||
+      this.end ||
+      game.ratingBeforeSource === 'public-profile' ||
+      !Number.isFinite(stars) ||
+      stars < 0
+    ) {
+      return false;
+    }
+    game.rating.before = stars;
+    game.ratingBeforeSource = 'public-profile';
     return true;
   }
 
@@ -375,7 +398,12 @@ export class GameState {
     game.rating.after = stars;
     game.rating.source = source;
     game.rating.capturedAt = new Date().toISOString();
-    game.rating.delta = game.rating.before === null ? null : stars - game.rating.before;
+    const comparable =
+      source === 'public-profile'
+        ? game.ratingBeforeSource === 'public-profile'
+        : game.ratingBeforeSource === 'game-event';
+    game.rating.delta =
+      game.rating.before === null || !comparable ? null : stars - game.rating.before;
     if (this.end) this.end.rating = { ...game.rating };
     return true;
   }

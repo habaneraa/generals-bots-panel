@@ -109,7 +109,7 @@ describe('MatchHistory details updates', () => {
     expect(dialog.textContent).toContain('胜利');
     expect(dialog.textContent).toContain('40');
     expect(dialog.textContent).toContain('+1.5');
-    expect(dialog.textContent).toContain('12 → 13.5');
+    expect(dialog.textContent).toContain('12.0 → 13.5');
     expect(dialog.textContent).not.toContain('尚未记录结束');
     expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalledTimes(1);
     expect(HTMLDialogElement.prototype.close).not.toHaveBeenCalled();

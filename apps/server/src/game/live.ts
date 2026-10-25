@@ -252,7 +252,7 @@ export class SocketGame implements GameConnection {
         const applied = this.state.setRatingAfter(value.gameId, stars, 'public-profile');
         const latest = this.state.current();
         debug(`sample applied=${applied} stars=${stars} delta=${latest?.rating?.delta ?? null}`);
-        return latest ?? value;
+        return latest?.gameId === value.gameId ? latest : value;
       }
     } catch {
       // Optional metadata must not turn a completed game into an interruption.
@@ -277,7 +277,7 @@ export class SocketGame implements GameConnection {
         this.log?.(
           `[rating] game=${current.gameId} phase=before player=${player.index} self=${player.isSelf} ${message}`,
         );
-      if (player.stars !== null || !player.username?.trim()) {
+      if ((!player.isSelf && player.stars !== null) || !player.username?.trim()) {
         debug(
           `lookup skipped stars=${player.stars} reason=${player.stars !== null ? 'existing-snapshot-stars' : 'missing-username'}`,
         );
@@ -292,9 +292,11 @@ export class SocketGame implements GameConnection {
             );
             return;
           }
+          const baselineApplied =
+            player.isSelf && this.state.setRatingBefore(current.gameId, stars);
           const applied = this.state.setPlayerStars(current.gameId, player.index, stars);
-          debug(`sample applied=${applied} stars=${stars}`);
-          if (applied) this.notify();
+          debug(`sample applied=${applied} baselineApplied=${baselineApplied} stars=${stars}`);
+          if (applied || baselineApplied) this.notify();
         })
         .catch(() => undefined);
     }

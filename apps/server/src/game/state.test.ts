@@ -158,6 +158,59 @@ describe('per-game self rating metadata', () => {
     expect(unknown.current()).toMatchObject({ rating: { before: null, after: null, delta: null } });
   });
 
+  it('prefers the first precise public baseline without replacing snapshot stars', () => {
+    const state = start([99, 84]);
+    expect(state.setRatingBefore('rating-game', 83.876173960723037)).toBe(true);
+    expect(state.setRatingBefore('rating-game', 85)).toBe(false);
+    state.update('game_update', { stars: [99, 84] });
+    state.update('game_won');
+    expect(state.setRatingAfter('rating-game', 84.117323068167025, 'public-profile')).toBe(true);
+    expect(state.current()?.rating?.before).toBe(83.876173960723037);
+    expect(state.current()?.rating?.after).toBe(84.117323068167025);
+    expect(state.current()?.rating?.delta).toBeCloseTo(0.241149107443988, 10);
+    expect(state.getSnapshot()?.snapshot.players[1]?.stars).toBe(84);
+  });
+
+  it('does not turn a precise loss into a gain by using rounded server stars', () => {
+    const state = start([99, 10]);
+    state.setRatingBefore('rating-game', 10.9);
+    state.update('game_lost');
+    state.setRatingAfter('rating-game', 10.8, 'public-profile');
+    expect(state.current()?.rating?.delta).toBeCloseTo(-0.1);
+  });
+
+  it.each(['public-profile', 'terminal'] as const)(
+    'does not subtract mismatched baseline sources for %s',
+    (source) => {
+      const state = start([99, 84]);
+      if (source === 'terminal') state.setRatingBefore('rating-game', 83.876173960723037);
+      state.update('game_won');
+      state.setRatingAfter('rating-game', 84.117323068167025, source);
+      expect(state.current()?.rating?.delta).toBeNull();
+    },
+  );
+
+  it('rejects invalid, cross-game and late precise baselines', () => {
+    const state = start([99, 84]);
+    expect(state.setRatingBefore('other-game', 1)).toBe(false);
+    for (const value of [NaN, Infinity, -1]) {
+      expect(state.setRatingBefore('rating-game', value)).toBe(false);
+    }
+    state.update('game_won');
+    expect(state.setRatingBefore('rating-game', 83.876173960723037)).toBe(false);
+    expect(state.current()?.rating?.before).toBe(84);
+    state.reset();
+    expect(state.setRatingBefore('rating-game', 0)).toBe(false);
+  });
+
+  it('accepts zero as an exact baseline before the game ends', () => {
+    const state = start([99, 1]);
+    expect(state.setRatingBefore('rating-game', 0)).toBe(true);
+    state.update('game_won');
+    state.setRatingAfter('rating-game', 0, 'public-profile');
+    expect(state.current()?.rating).toMatchObject({ before: 0, after: 0, delta: 0 });
+  });
+
   it('keeps the first opening lookup and rejects invalid or stale post-game samples', () => {
     const state = start();
     state.setPlayerStars('rating-game', 1, 0);

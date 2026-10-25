@@ -1,7 +1,10 @@
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
 
 export function formatStars(value: number): string {
-  return value.toLocaleString('zh-CN', { maximumFractionDigits: 6 });
+  return (Math.abs(value) < 0.05 ? 0 : value).toLocaleString('zh-CN', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
 }
 
 export function starChangeTone(delta: number | null): string {

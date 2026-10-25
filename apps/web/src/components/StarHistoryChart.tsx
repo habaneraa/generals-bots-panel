@@ -34,8 +34,8 @@ export function starHistoryOption(matches: MatchRecord[]): EChartsCoreOption {
     yAxis: {
       type: 'value',
       scale: true,
-      minInterval: 0.01,
-      axisLabel: { color: '#647878', fontSize: 10 },
+      minInterval: 0.1,
+      axisLabel: { color: '#647878', fontSize: 10, formatter: formatStars },
       splitLine: { lineStyle: { color: '#e1e8e8', type: 'dashed' } },
     },
     series: matches.map((match, index) => {

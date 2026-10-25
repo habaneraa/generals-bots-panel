@@ -80,14 +80,14 @@ export interface MatchDetails {
 /** Self player's 1v1 stars; unknown values are never inferred from the outcome. */
 export interface MatchRating {
   username: string | null;
-  /** First observed stars before the terminal event. */
+  /** First pre-game public profile sample when available, otherwise server-observed stars. */
   before: number | null;
   /** Terminal stars or a post-game public profile sample, which may lag settlement. */
   after: number | null;
   source: 'terminal' | 'public-profile' | null;
   /** Time the after value was observed. */
   capturedAt: string | null;
-  /** after - before, only when both values are known. */
+  /** after - before, only when both values are known and come from the same source. */
   delta: number | null;
 }
 export interface MatchRecord {

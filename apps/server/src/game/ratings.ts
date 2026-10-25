@@ -70,7 +70,10 @@ export async function fetchDuelStars(
             ? 'null'
             : 'unavailable';
       debug?.(`parsed stars.duel type=${typeof raw} value=${value}`);
-      const result = typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : null;
+      const parsed =
+        typeof raw === 'string' && /^\d+(?:\.\d+)?$/.test(raw.trim()) ? Number(raw) : raw;
+      const result =
+        typeof parsed === 'number' && Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
       debug?.(`result=${result} reason=${result === null ? 'invalid-stars.duel' : 'ok'}`);
       return result;
     } catch (error) {
