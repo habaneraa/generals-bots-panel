@@ -22,7 +22,7 @@ const tabMeta: Record<TabId, { title: string; description: string }> = {
   },
   history: {
     title: '对局记录',
-    description: '检索全部历史对局，展开查看合并后的快照与 Agent 计步。',
+    description: '检索全部历史对局，打开详情查看最后记录的快照与 Agent 计步。',
   },
   logs: {
     title: '运行日志',
@@ -60,35 +60,37 @@ export function App() {
 
   return (
     <div className="min-h-dvh bg-canvas">
-      <aside className="z-30 w-full shrink-0 bg-forest-950 text-white lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-[264px] lg:flex-col">
-        <div className="flex items-center gap-3 px-4 pb-3 pt-4 lg:px-6 lg:pb-0 lg:pt-7">
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-lime text-forest-950 shadow-lg shadow-black/20">
-            <Flag size={20} strokeWidth={2.2} aria-hidden="true" />
+      <aside className="z-30 w-full shrink-0 border-b border-line bg-surface lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-[228px] lg:flex-col lg:border-r lg:border-b-0">
+        <div className="flex items-center gap-2.5 px-3 py-3 lg:px-4 lg:py-5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-[3px] bg-teal text-white">
+            <Flag size={17} strokeWidth={2.2} aria-hidden="true" />
           </span>
           <div>
-            <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-lime/70">
+            <p className="text-[8px] font-semibold uppercase tracking-[0.24em] text-teal">
               Generals
             </p>
-            <p className="mt-0.5 text-[15px] font-semibold tracking-tight text-white">Bot 控制台</p>
+            <p className="text-[13px] font-semibold leading-tight tracking-tight text-ink">
+              Bot 控制台
+            </p>
           </div>
-          <span className="ml-auto hidden items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 text-[9px] uppercase tracking-[0.16em] text-white/35 lg:inline-flex">
+          <span className="ml-auto hidden rounded-[2px] border border-line px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.12em] text-faint lg:inline">
             Local
           </span>
         </div>
 
-        <p className="hidden px-7 pb-3 pt-8 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/30 lg:block">
+        <p className="hidden px-5 pb-2 pt-4 text-[9px] font-semibold uppercase tracking-[0.18em] text-faint lg:block">
           工作区
         </p>
         <Navigation active={activeTab} onChange={setActiveTab} />
 
-        <div className="mt-auto hidden p-4 lg:block">
-          <div className="rounded-xl bg-white/[0.04] p-3.5 ring-1 ring-white/5">
-            <div className="flex items-center gap-2 text-[11px] text-white/45">
-              <ShieldCheck size={13} aria-hidden="true" />
+        <div className="mt-auto hidden p-3 lg:block">
+          <div className="rounded-[3px] border border-line bg-canvas p-3">
+            <div className="flex items-center gap-1.5 text-[10px] text-muted">
+              <ShieldCheck size={12} className="text-teal" aria-hidden="true" />
               本地单用户 · 仅回环地址
             </div>
             <p
-              className="mt-2 truncate font-mono text-[10px] text-white/30"
+              className="mt-1.5 truncate font-mono text-[9px] text-faint"
               title={dashboard?.dataDir ?? 'data/'}
             >
               {dashboard?.dataDir ?? 'data/'}
@@ -97,25 +99,23 @@ export function App() {
         </div>
       </aside>
 
-      <div className="min-w-0 lg:pl-[264px]">
-        <div className="mx-auto w-full max-w-[1200px] px-4 pb-10 pt-6 sm:px-6 lg:px-10 lg:pt-9">
-          <header className="flex flex-col gap-5 border-b border-line pb-6 sm:flex-row sm:items-end sm:justify-between">
-            <div className="animate-rise">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-moss">
+      <div className="min-w-0 lg:pl-[228px]">
+        <div className="mx-auto w-full max-w-[1240px] px-4 pb-8 pt-5 sm:px-6 lg:px-8 lg:pt-7">
+          <header className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-teal">
                 Generals / Bot Panel
               </p>
-              <h1 className="mt-2 text-[26px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[30px]">
+              <h1 className="mt-1 text-[22px] font-semibold leading-tight tracking-[-0.01em] text-ink">
                 {meta.title}
               </h1>
-              <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-muted">
-                {meta.description}
-              </p>
+              <p className="mt-1 max-w-2xl text-xs leading-snug text-muted">{meta.description}</p>
             </div>
             <ConnectionBadge connection={connection} />
           </header>
 
           {hasNotice && (
-            <div className="mt-5 space-y-3">
+            <div className="mt-3 space-y-2">
               {loadError && (
                 <Notice
                   action={
@@ -132,7 +132,7 @@ export function App() {
                   tone="info"
                   action={
                     <button className="btn btn-secondary btn-sm" type="button" onClick={retry}>
-                      <RefreshCw size={13} /> 立即重连
+                      <RefreshCw size={12} /> 立即重连
                     </button>
                   }
                 >
@@ -149,13 +149,13 @@ export function App() {
             <>
               <div
                 id="panel-start"
-                className="animate-rise pt-5"
+                className="pt-4"
                 role="tabpanel"
                 aria-labelledby="tab-start"
                 tabIndex={0}
                 hidden={activeTab !== 'start'}
               >
-                <div className="mx-auto grid max-w-4xl gap-5">
+                <div className="mx-auto grid max-w-4xl gap-3">
                   <RunOverview
                     state={dashboard.state}
                     pending={pending}
@@ -177,7 +177,7 @@ export function App() {
               </div>
               <div
                 id="panel-stats"
-                className="animate-rise pt-5"
+                className="pt-4"
                 role="tabpanel"
                 aria-labelledby="tab-stats"
                 tabIndex={0}
@@ -187,7 +187,7 @@ export function App() {
               </div>
               <div
                 id="panel-history"
-                className="animate-rise pt-5"
+                className="pt-4"
                 role="tabpanel"
                 aria-labelledby="tab-history"
                 tabIndex={0}
@@ -197,7 +197,7 @@ export function App() {
               </div>
               <div
                 id="panel-logs"
-                className="animate-rise pt-5"
+                className="pt-4"
                 role="tabpanel"
                 aria-labelledby="tab-logs"
                 tabIndex={0}
@@ -209,8 +209,8 @@ export function App() {
                   active={activeTab === 'logs'}
                 />
               </div>
-              <footer className="mt-10 flex flex-col gap-2 border-t border-line pt-5 text-[10px] text-faint sm:flex-row sm:items-center sm:justify-between">
-                <span className="font-semibold uppercase tracking-[0.18em] text-muted">
+              <footer className="mt-7 flex flex-col gap-1 border-t border-line pt-3 text-[9px] text-faint sm:flex-row sm:items-center sm:justify-between">
+                <span className="font-semibold uppercase tracking-[0.14em] text-muted">
                   Generals <span className="font-normal text-faint">Bot Panel</span>
                 </span>
                 <span className="truncate" title={dashboard.dataDir}>
@@ -219,12 +219,12 @@ export function App() {
               </footer>
             </>
           ) : (
-            <section className="panel mt-5 flex min-h-[420px] flex-col items-center justify-center gap-4 px-6 text-center">
+            <section className="panel mt-4 flex min-h-[360px] flex-col items-center justify-center gap-3 px-6 text-center">
               {loadError ? (
                 <>
-                  <RefreshCw size={28} className="text-moss" aria-hidden="true" />
-                  <h2 className="text-base font-semibold text-ink">暂时无法连接控制台</h2>
-                  <p className="max-w-sm text-sm leading-relaxed text-muted">
+                  <RefreshCw size={24} className="text-teal" aria-hidden="true" />
+                  <h2 className="text-sm font-semibold text-ink">暂时无法连接控制台</h2>
+                  <p className="max-w-sm text-xs leading-snug text-muted">
                     请确认 API 服务可用，然后重新连接。
                   </p>
                   <button className="btn btn-primary mt-1" type="button" onClick={retry}>
@@ -233,11 +233,11 @@ export function App() {
                 </>
               ) : (
                 <>
-                  <span className="text-moss">
+                  <span className="text-teal">
                     <Spinner />
                   </span>
-                  <h2 className="text-base font-semibold text-ink">正在连接控制台</h2>
-                  <p className="max-w-sm text-sm leading-relaxed text-muted">
+                  <h2 className="text-sm font-semibold text-ink">正在连接控制台</h2>
+                  <p className="max-w-sm text-xs leading-snug text-muted">
                     等待 API 与实时事件流返回运行数据。
                   </p>
                 </>

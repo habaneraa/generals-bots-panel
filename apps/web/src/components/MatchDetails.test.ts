@@ -3,10 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { MatchRecord, MatchSnapshot } from '../../../../packages/contracts/src/index';
 import { MatchDetails } from './MatchDetails';
+import { MatchDetailsModal } from './MatchDetailsModal';
 import { MatchHistoryRow } from './MatchHistoryRow';
 
-function matchRecord(): MatchRecord {
-  const snapshot: MatchSnapshot = {
+function lastSnapshot(): MatchSnapshot {
+  return {
     turn: 80,
     serverTurn: 160,
     capturedAt: '2026-10-25T06:00:04Z',
@@ -44,6 +45,23 @@ function matchRecord(): MatchRecord {
       },
     ],
   };
+}
+
+function matchRecord(): MatchRecord {
+  const last = lastSnapshot();
+  const initial: MatchSnapshot = {
+    ...last,
+    turn: 0,
+    serverTurn: 1,
+    map: null,
+    players: last.players.map((player) => ({
+      ...player,
+      land: 999,
+      army: 888,
+      cities: 777,
+      alive: true,
+    })),
+  };
   return {
     id: 'record-id',
     runId: 'run-id',
@@ -57,8 +75,8 @@ function matchRecord(): MatchRecord {
     turns: 80,
     replayUrl: null,
     details: {
-      initial: { ...snapshot, turn: null, serverTurn: null, map: null },
-      last: snapshot,
+      initial,
+      last,
       durationMs: 4000,
       winnerIndex: 0,
       endReason: 'game_won',
@@ -79,80 +97,62 @@ function matchRecord(): MatchRecord {
 const render = (match: MatchRecord) => renderToStaticMarkup(createElement(MatchDetails, { match }));
 
 describe('MatchDetails', () => {
-  it('renders public player values and identifies incomplete terminal information', () => {
+  it('renders only the last recorded snapshot, not the fixed opening values', () => {
     const html = render(matchRecord());
     for (const text of [
       'record-id',
       'run-id',
-      'game-id',
       'self-player',
       'opponent-player',
-      'public-self-id',
-      '公开 ID',
-      'Star',
       '20 × 15',
       'serverTurn',
       'game_won',
       '4 秒',
       '策略步数',
-      '已提交移动',
+      '已提交',
       '10 ms',
       '20 ms',
-      '最后记录的快照，不一定是完整终局',
-      '已提交移动不等于服务器实际执行',
-      '已见城市下限',
+      '已见城市',
+      '最后记录的快照不一定是完整终局',
     ])
       expect(html).toContain(text);
-    expect(html).toMatch(/公开 ID：<span[^>]*>服务器未提供<\/span>/);
-    expect(html).toContain('Star 0');
-    expect(html).toContain('Star 12');
-    expect(html).toMatch(/获胜玩家索引<\/dt><dd[^>]*>0<\/dd>/);
+    expect(html).not.toContain('999');
+    expect(html).not.toContain('888');
+    expect(html).not.toContain('首个记录');
+    expect(html).not.toContain('公开 ID');
+    expect(html).not.toContain('阵营 0');
+    expect(html).not.toContain('索引 0');
+    expect(html).toContain('aria-label="Star 12"');
+    expect(html).toContain('aria-label="Star 0"');
   });
 
-  it('merges snapshot identity fields instead of repeating both snapshots', () => {
+  it('keeps the star next to the player name and omits player index metadata', () => {
     const html = render(matchRecord());
-    expect(html.match(/public-self-id/g)).toHaveLength(1);
-    expect(html.match(/20 × 15/g)).toHaveLength(1);
-    expect(html.match(/0 \/ 1/g)).toHaveLength(1);
-    expect(html).toContain('首个与最后快照中相同的信息只显示一次');
-  });
-
-  it('shows only changed values as first-to-last comparisons', () => {
-    const match = matchRecord();
-    const initial = match.details?.initial;
-    if (!initial) throw new Error('Expected an initial snapshot');
-    initial.players = initial.players.map((player) =>
-      player.isSelf
-        ? { ...player, land: 12, army: 50, cities: 1 }
-        : { ...player, alive: true, visibleCities: 0 },
-    );
-    const html = render(match);
-    expect(html).toContain('aria-label="领地：首个记录 12，最后记录 20"');
-    expect(html).toContain('aria-label="兵力：首个记录 50，最后记录 100"');
-    expect(html).toContain('aria-label="存活：首个记录 存活，最后记录 已出局"');
-    expect(html).toContain('aria-label="已见城市下限：首个记录 ≥ 0，最后记录 ≥ 1"');
-    expect(html).toMatch(/12<\/span><svg[^>]*>.*?20<\/span>/);
+    const namePosition = html.indexOf('self-player');
+    const starPosition = html.indexOf('aria-label="Star 12"');
+    expect(namePosition).toBeGreaterThan(-1);
+    expect(starPosition).toBeGreaterThan(namePosition);
+    expect(html).not.toContain('公开 ID');
+    expect(html).not.toContain('索引 0');
+    expect(html).not.toContain('阵营 0');
   });
 
   it('distinguishes unavailable stars from an actual zero', () => {
     const match = matchRecord();
-    const details = match.details;
-    if (!details?.initial || !details.last) throw new Error('Expected both snapshots');
-    const withoutStars = (player: MatchSnapshot['players'][number]) =>
-      player.isSelf ? { ...player, stars: null } : player;
-    details.initial.players = details.initial.players.map(withoutStars);
-    details.last.players = details.last.players.map(withoutStars);
+    const last = match.details?.last;
+    if (!last) throw new Error('Expected a recorded snapshot');
+    last.players = last.players.map((player) =>
+      player.isSelf ? { ...player, stars: null } : player,
+    );
     const html = render(match);
     expect(html).toContain('Star 未获取');
     expect(html).toContain('Star 0');
   });
 
-  it('falls back to the last snapshot for metadata missing from the initial one', () => {
+  it('renders unknown city counts as missing instead of zero', () => {
     const html = render(matchRecord());
-    expect(html).toContain('记录回合 服务器未提供');
-    expect(html).toContain('记录回合 80');
-    expect(html).toContain('原始回合（serverTurn） 160');
-    expect(html.match(/public-self-id/g)).toHaveLength(1);
+    expect(html).toContain('服务器未提供或视野不完整时显示为 —');
+    expect(html.match(/最后记录 · /g)).toHaveLength(1);
   });
 
   it('does not invent counters or snapshots for older records', () => {
@@ -160,23 +160,51 @@ describe('MatchDetails', () => {
     delete match.details;
     const html = render(match);
     expect(html).toContain('此记录的快照和 Agent 计步详情未采集');
-    expect(html).toMatch(/时长<\/dt><dd[^>]*>未采集<\/dd>/);
+    expect(html).toContain('未采集');
     expect(html).not.toContain('策略步数');
     expect(html).not.toContain('玩家状态');
     expect(html).not.toContain('地图与规则');
   });
+});
 
-  it('keeps each history detail collapsed with an accessible button by default', () => {
+describe('MatchDetailsModal', () => {
+  it('renders a native dialog wrapper with a close control', () => {
+    const html = renderToStaticMarkup(
+      createElement(MatchDetailsModal, { match: matchRecord(), onClose: () => {} }),
+    );
+    expect(html).toContain('<dialog');
+    expect(html).toContain('class="modal"');
+    expect(html).toContain('aria-labelledby="match-details-title"');
+    expect(html).toContain('关闭对局详情');
+    expect(html).toContain('game-id');
+    expect(html).toContain('self-player');
+  });
+
+  it('renders nothing without a selected match', () => {
+    const html = renderToStaticMarkup(
+      createElement(MatchDetailsModal, { match: null, onClose: () => {} }),
+    );
+    expect(html).toBe('');
+  });
+});
+
+describe('MatchHistoryRow', () => {
+  it('opens the details dialog instead of expanding inline', () => {
     const html = renderToStaticMarkup(
       createElement(
         'table',
         null,
-        createElement('tbody', null, createElement(MatchHistoryRow, { match: matchRecord() })),
+        createElement(
+          'tbody',
+          null,
+          createElement(MatchHistoryRow, { match: matchRecord(), onOpen: () => {} }),
+        ),
       ),
     );
-    expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('aria-controls=');
-    expect(html).toContain('class="match-detail-row" hidden=""');
-    expect(html).not.toContain('class="match-details');
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).toContain('打开对局 game-id 详情');
+    expect(html).toContain('详情');
+    expect(html).not.toContain('aria-expanded');
+    expect(html).not.toContain('match-detail-row');
   });
 });

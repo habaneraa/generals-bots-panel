@@ -76,17 +76,17 @@ export function HistoryFilters({ onApply }: { onApply: (filters: MatchFilters) =
 
   return (
     <form
-      className="border-b border-line bg-canvas/40 px-5 py-5 sm:px-7"
+      className="border-b border-line bg-surface-subtle px-4 py-3"
       onSubmit={submit}
       noValidate
       aria-label="对局历史筛选"
     >
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-moss">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted">
           筛选条件
         </span>
         <div className="flex items-center gap-2">
-          <span className="hidden text-[10px] leading-relaxed text-faint sm:inline">
+          <span className="hidden text-[10px] text-faint sm:inline">
             按全部真实记录筛选，时间使用本地时区
           </span>
           <button
@@ -96,14 +96,17 @@ export function HistoryFilters({ onApply }: { onApply: (filters: MatchFilters) =
             aria-controls="history-filter-fields"
             onClick={() => setFiltersOpen((current) => !current)}
           >
-            <SlidersHorizontal size={13} />
+            <SlidersHorizontal size={11} />
             {filtersOpen ? '收起' : '展开'}筛选
           </button>
         </div>
       </div>
 
-      <div id="history-filter-fields" className={filtersOpen ? 'block' : 'hidden lg:block'}>
-        <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        id="history-filter-fields"
+        className={filtersOpen ? 'mt-3 block' : 'mt-3 hidden lg:block'}
+      >
+        <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-4">
           <ConfigField id="history-server" label="服务器" error={errors.server}>
             <select {...input('server')} className="select">
               <option value="">全部服务器</option>
@@ -132,7 +135,7 @@ export function HistoryFilters({ onApply }: { onApply: (filters: MatchFilters) =
           <ConfigField id="history-gameId" label="对局 ID" error={errors.gameId}>
             <input
               {...input('gameId')}
-              className="input font-mono text-[13px]"
+              className="input font-mono text-[12px]"
               maxLength={256}
               placeholder="对局 ID"
               spellCheck={false}
@@ -186,17 +189,17 @@ export function HistoryFilters({ onApply }: { onApply: (filters: MatchFilters) =
           </ConfigField>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-1.5">
           <button className="btn btn-ghost btn-sm" type="button" onClick={reset}>
-            <RotateCcw size={13} /> 重置全部
+            <RotateCcw size={11} /> 重置
           </button>
           <button className="btn btn-primary btn-sm" type="submit">
-            <Filter size={13} /> 筛选
+            <Filter size={11} /> 筛选
           </button>
         </div>
 
         {Object.keys(errors).length > 0 && (
-          <div className="mt-4">
+          <div className="mt-2.5">
             <Notice>筛选条件有误，请检查标红字段后重试。</Notice>
           </div>
         )}

@@ -17,61 +17,44 @@ export function RunOverview({ state, pending, onStop }: Props) {
     ? `启动于 ${formatDateTime(state.run.startedAt)} · ${state.run.config.server} 服务器`
     : '配置你的 Bot，让下一场对局从这里开始。';
   const maxGames = state.run ? (state.run.config.autopilot ? state.run.config.maxGames : 1) : null;
+  const failed = state.phase === 'failed';
 
   return (
     <section
-      className="relative overflow-hidden rounded-2xl bg-forest-950 text-white shadow-lift"
+      className="overflow-hidden rounded-[4px] border border-line bg-surface"
       aria-labelledby="run-heading"
     >
-      <div
-        className="pointer-events-none absolute -right-20 -top-28 size-72 rounded-full bg-lime/10 blur-3xl"
-        aria-hidden="true"
-      />
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
-        aria-hidden="true"
-      />
-
-      <div className="relative flex flex-col gap-5 p-5 sm:p-7 md:flex-row md:items-center">
+      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <div
-          className={`grid size-14 shrink-0 place-items-center rounded-2xl ring-1 ring-inset ${
-            state.phase === 'failed'
-              ? 'bg-danger/15 text-[#efb3a1] ring-danger/20'
-              : 'bg-white/[0.07] text-lime ring-white/10'
+          className={`grid size-9 shrink-0 place-items-center rounded-[3px] ${
+            failed ? 'bg-danger/[0.08] text-danger' : 'bg-teal-soft text-teal'
           }`}
         >
-          <Cpu size={25} aria-hidden="true" />
+          <Cpu size={19} aria-hidden="true" />
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <span
               className={`size-1.5 rounded-full ${
-                running
-                  ? 'animate-pulse bg-lime'
-                  : state.phase === 'failed'
-                    ? 'bg-[#e1a18c]'
-                    : 'bg-white/35'
+                running ? 'animate-pulse bg-teal' : failed ? 'bg-danger' : 'bg-faint'
               }`}
               aria-hidden="true"
             />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/40">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-faint">
               Run status
             </span>
           </div>
-          <h2
-            id="run-heading"
-            className="mt-2 text-[22px] font-semibold tracking-tight sm:text-2xl"
-          >
+          <h2 id="run-heading" className="mt-1 text-lg font-semibold tracking-tight">
             {phaseLabels[state.phase]}
           </h2>
-          <p className="mt-1.5 text-xs leading-relaxed text-white/50">{caption}</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted">{caption}</p>
         </div>
 
-        <div className="w-full md:w-auto">
+        <div className="w-full sm:w-auto">
           {running ? (
             <button
-              className="btn w-full border border-white/15 bg-white/[0.06] text-white hover:bg-white/10 md:w-auto"
+              className="btn btn-secondary w-full sm:w-auto"
               type="button"
               onClick={onStop}
               disabled={pending !== null || state.phase === 'stopping'}
@@ -79,60 +62,60 @@ export function RunOverview({ state, pending, onStop }: Props) {
               {pending === 'stop' || state.phase === 'stopping' ? (
                 <Spinner />
               ) : (
-                <Square size={14} fill="currentColor" />
+                <Square size={12} fill="currentColor" />
               )}
               {state.phase === 'stopping' ? '正在停止' : '停止运行'}
             </button>
           ) : (
             <button
-              className="btn btn-accent w-full md:w-auto"
+              className="btn btn-primary w-full sm:w-auto"
               form="run-config"
               type="submit"
               name="intent"
               value="start"
               disabled={pending !== null}
             >
-              {pending === 'start' ? <Spinner /> : <Play size={15} fill="currentColor" />}
+              {pending === 'start' ? <Spinner /> : <Play size={13} fill="currentColor" />}
               {pending === 'start' ? '正在启动' : '启动运行'}
             </button>
           )}
         </div>
       </div>
 
-      <dl className="relative grid grid-cols-2 divide-x divide-y divide-white/10 border-t border-white/10 sm:grid-cols-4 sm:divide-y-0">
-        <div className="px-5 py-4">
-          <dt className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.1em] text-white/40">
-            <Zap size={12} aria-hidden="true" /> 当前回合
+      <dl className="grid grid-cols-2 divide-x divide-y divide-line border-t border-line sm:grid-cols-4 sm:divide-y-0">
+        <div className="px-4 py-2.5">
+          <dt className="flex items-center gap-1 text-[9px] uppercase tracking-[0.08em] text-faint">
+            <Zap size={10} aria-hidden="true" /> 当前回合
           </dt>
-          <dd className="mt-2 font-mono text-lg font-medium tabular text-white">
+          <dd className="mt-1 font-mono text-sm font-semibold tabular text-ink">
             {state.match ? state.turn : '—'}
           </dd>
         </div>
-        <div className="px-5 py-4">
-          <dt className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.1em] text-white/40">
-            <Cpu size={12} aria-hidden="true" /> Agent 延迟
+        <div className="px-4 py-2.5">
+          <dt className="flex items-center gap-1 text-[9px] uppercase tracking-[0.08em] text-faint">
+            <Cpu size={10} aria-hidden="true" /> Agent 延迟
           </dt>
-          <dd className="mt-2 font-mono text-lg font-medium tabular text-white">
+          <dd className="mt-1 font-mono text-sm font-semibold tabular text-ink">
             {state.agentLatencyMs === null ? '—' : `${state.agentLatencyMs} ms`}
           </dd>
         </div>
-        <div className="px-5 py-4">
-          <dt className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.1em] text-white/40">
-            <Flag size={12} aria-hidden="true" /> 本轮已完成
+        <div className="px-4 py-2.5">
+          <dt className="flex items-center gap-1 text-[9px] uppercase tracking-[0.08em] text-faint">
+            <Flag size={10} aria-hidden="true" /> 本轮已完成
           </dt>
-          <dd className="mt-2 font-mono text-lg font-medium tabular text-white">
+          <dd className="mt-1 font-mono text-sm font-semibold tabular text-ink">
             {state.completedGames}
-            <span className="ml-1 font-sans text-[11px] font-normal text-white/35">
+            <span className="ml-1 font-sans text-[10px] font-normal text-faint">
               / {maxGames ?? '—'} 场
             </span>
           </dd>
         </div>
-        <div className="px-5 py-4">
-          <dt className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.1em] text-white/40">
-            <Clock3 size={12} aria-hidden="true" /> {state.nextGameAt ? '下次对局' : '当前对局'}
+        <div className="px-4 py-2.5">
+          <dt className="flex items-center gap-1 text-[9px] uppercase tracking-[0.08em] text-faint">
+            <Clock3 size={10} aria-hidden="true" /> {state.nextGameAt ? '下次对局' : '当前对局'}
           </dt>
           <dd
-            className="mt-2 truncate font-mono text-xs font-medium text-white/90"
+            className="mt-1 truncate font-mono text-[11px] font-medium text-ink"
             title={state.nextGameAt ? formatTime(state.nextGameAt) : (state.match?.gameId ?? '')}
           >
             {state.nextGameAt ? formatTime(state.nextGameAt) : state.match?.gameId || '—'}
@@ -142,8 +125,8 @@ export function RunOverview({ state, pending, onStop }: Props) {
 
       {(state.match || state.run?.error) && (
         <div
-          className={`relative flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-5 py-3 text-[11px] sm:px-7 ${
-            state.run?.error ? 'bg-danger/15 text-[#f1c3b5]' : 'text-white/45'
+          className={`flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2 text-[10.5px] ${
+            state.run?.error ? 'bg-danger/[0.045] text-danger' : 'bg-surface-subtle text-muted'
           }`}
         >
           <span className="min-w-0 break-words">
@@ -152,12 +135,12 @@ export function RunOverview({ state, pending, onStop }: Props) {
           </span>
           {replay && (
             <a
-              className="inline-flex items-center gap-1 whitespace-nowrap text-lime transition-colors hover:text-lime-strong"
+              className="inline-flex items-center gap-1 whitespace-nowrap font-medium text-teal transition-colors hover:text-teal-dark"
               href={replay}
               target="_blank"
               rel="noopener noreferrer"
             >
-              打开回放 <ArrowUpRight size={13} aria-hidden="true" />
+              打开回放 <ArrowUpRight size={11} aria-hidden="true" />
             </a>
           )}
         </div>

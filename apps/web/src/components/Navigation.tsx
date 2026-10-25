@@ -4,7 +4,7 @@ import { useRef, type KeyboardEvent } from 'react';
 const tabs = [
   { id: 'start', label: '启动', caption: '运行与参数', icon: Play },
   { id: 'stats', label: '统计', caption: '真实对局概览', icon: ChartNoAxesCombined },
-  { id: 'history', label: '对局记录', caption: '历史与快照', icon: History },
+  { id: 'history', label: '对局记录', caption: '历史与详情', icon: History },
   { id: 'logs', label: '日志', caption: '实时输出', icon: Terminal },
 ] as const;
 
@@ -42,7 +42,7 @@ export function Navigation({ active, onChange }: Props) {
 
   return (
     <nav
-      className="flex gap-1 overflow-x-auto px-3 pb-3 [scrollbar-width:none] lg:flex-col lg:gap-1.5 lg:overflow-visible lg:px-4 lg:pb-0"
+      className="flex gap-0.5 overflow-x-auto px-2 pb-2 [scrollbar-width:none] lg:flex-col lg:overflow-visible lg:pb-0"
       role="tablist"
       aria-label="控制台页面"
     >
@@ -55,10 +55,10 @@ export function Navigation({ active, onChange }: Props) {
               buttons.current[index] = button;
             }}
             id={`tab-${id}`}
-            className={`group flex shrink-0 items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm transition-colors lg:w-full ${
+            className={`flex shrink-0 items-center gap-2 rounded-[3px] px-2.5 py-2 text-[13px] transition-colors lg:w-full ${
               selected
-                ? 'bg-lime font-semibold text-forest-950 shadow-sm'
-                : 'text-white/60 hover:bg-white/5 hover:text-white'
+                ? 'bg-teal-soft font-medium text-teal-dark'
+                : 'text-muted hover:bg-canvas hover:text-ink'
             }`}
             type="button"
             role="tab"
@@ -68,11 +68,11 @@ export function Navigation({ active, onChange }: Props) {
             onClick={() => onChange(id)}
             onKeyDown={(event) => onKeyDown(event, index)}
           >
-            <Icon size={17} strokeWidth={2} aria-hidden="true" />
+            <Icon size={15} strokeWidth={2} aria-hidden="true" />
             <span className="whitespace-nowrap">{label}</span>
             <span
-              className={`ml-auto hidden text-[10px] font-normal lg:block ${
-                selected ? 'text-forest-950/50' : 'text-white/25'
+              className={`ml-auto hidden text-[9px] font-normal lg:block ${
+                selected ? 'text-teal/70' : 'text-faint'
               }`}
             >
               {caption}

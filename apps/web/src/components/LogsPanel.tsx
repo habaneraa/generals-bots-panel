@@ -6,10 +6,10 @@ import { formatTime } from '../lib/format';
 type Props = { entries: LogEntry[]; runId: string | null; active: boolean };
 
 const levelTone: Record<LogLevel, string> = {
-  info: 'text-[#9dc57b]',
-  warn: 'text-[#d9b56a]',
-  error: 'text-[#e5a18d]',
-  debug: 'text-[#7f9a8b]',
+  info: 'text-teal-dark',
+  warn: 'text-warn',
+  error: 'text-danger',
+  debug: 'text-faint',
 };
 
 export function LogsPanel({ entries, runId, active }: Props) {
@@ -26,80 +26,60 @@ export function LogsPanel({ entries, runId, active }: Props) {
   }, [active, entries, level, follow]);
 
   return (
-    <section
-      id="logs"
-      className="overflow-hidden rounded-2xl border border-forest-800 bg-forest-950 text-white shadow-lift"
-      aria-labelledby="logs-heading"
-    >
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.02] px-5 py-4 sm:px-6">
+    <section id="logs" className="panel overflow-hidden" aria-labelledby="logs-heading">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
         <div>
-          <h2 id="logs-heading" className="flex items-center gap-2 text-[15px] font-semibold">
-            <Terminal size={17} className="text-lime" /> 实时日志
+          <h2 id="logs-heading" className="panel-heading">
+            <Terminal size={14} /> 实时日志
           </h2>
-          <p className="mt-1 text-xs leading-relaxed text-white/40">
-            当前运行最近 200 条 · 通过事件流实时更新
-          </p>
+          <p className="panel-caption">当前运行最近 200 条 · 通过事件流实时更新</p>
         </div>
         {runId ? (
           <a
-            className="inline-flex size-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            className="icon-btn"
             href={`/api/runs/${encodeURIComponent(runId)}/logs/download`}
             aria-label="下载本轮完整 JSONL 日志"
             title="下载完整 JSONL 日志"
           >
-            <Download size={16} />
+            <Download size={14} />
           </a>
         ) : (
-          <button
-            className="inline-flex size-9 items-center justify-center rounded-lg border border-white/10 text-white/25"
-            disabled
-            aria-label="暂无可下载日志"
-          >
-            <Download size={16} />
+          <button className="icon-btn" disabled aria-label="暂无可下载日志">
+            <Download size={14} />
           </button>
         )}
       </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-2.5 sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface-subtle px-4 py-2">
         <label
-          className="flex items-center gap-2 text-[11px] text-white/40"
+          className="flex items-center gap-1.5 text-[10px] text-muted"
           htmlFor={`${controlId}-level`}
         >
-          <ListFilter size={13} />
+          <ListFilter size={11} />
           <span className="sr-only">日志级别</span>
           <select
             id={`${controlId}-level`}
             name={`${controlId}-level`}
-            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] text-white/65 focus:outline-none"
+            className="cursor-pointer rounded-[2px] border border-line bg-surface px-1.5 py-1 text-[10px] text-ink-soft focus:border-teal focus:outline-none"
             value={level}
             onChange={(event) => setLevel(event.target.value as LogLevel | 'all')}
             aria-label="日志级别筛选"
           >
-            <option value="all" className="text-ink">
-              全部级别
-            </option>
-            <option value="info" className="text-ink">
-              INFO · 信息
-            </option>
-            <option value="warn" className="text-ink">
-              WARN · 警告
-            </option>
-            <option value="error" className="text-ink">
-              ERROR · 错误
-            </option>
-            <option value="debug" className="text-ink">
-              DEBUG · 调试
-            </option>
+            <option value="all">全部级别</option>
+            <option value="info">INFO · 信息</option>
+            <option value="warn">WARN · 警告</option>
+            <option value="error">ERROR · 错误</option>
+            <option value="debug">DEBUG · 调试</option>
           </select>
         </label>
         <label
-          className="flex cursor-pointer items-center gap-2 text-[11px] text-white/40"
+          className="flex cursor-pointer items-center gap-1.5 text-[10px] text-muted"
           htmlFor={`${controlId}-follow`}
         >
           <input
             id={`${controlId}-follow`}
             name={`${controlId}-follow`}
-            className="size-3.5 accent-lime-strong"
+            className="size-3 accent-teal"
             type="checkbox"
             checked={follow}
             onChange={(event) => setFollow(event.target.checked)}
@@ -109,42 +89,42 @@ export function LogsPanel({ entries, runId, active }: Props) {
       </div>
 
       <div
-        className="h-[min(62vh,720px)] min-h-80 overflow-auto overscroll-contain"
+        className="h-[min(58vh,640px)] min-h-72 overflow-auto overscroll-contain bg-surface"
         ref={viewport}
         tabIndex={0}
         role="region"
         aria-label="实时日志内容"
       >
         {visible.length > 0 ? (
-          <ol className="divide-y divide-white/5">
+          <ol className="divide-y divide-line/60">
             {visible.map((entry) => (
               <li
                 key={entry.id}
-                className="grid grid-cols-[58px_40px_minmax(0,1fr)] items-start gap-2 px-5 py-2.5 font-mono text-[11px] leading-relaxed sm:px-6"
+                className="grid grid-cols-[52px_38px_minmax(0,1fr)] items-start gap-1.5 px-4 py-1.5 font-mono text-[10.5px] leading-snug"
               >
-                <time className="text-[10px] text-white/25" dateTime={entry.time}>
+                <time className="text-[9.5px] text-faint" dateTime={entry.time}>
                   {formatTime(entry.time)}
                 </time>
                 <span
-                  className={`text-[9px] font-semibold uppercase tracking-[0.06em] ${levelTone[entry.level]}`}
+                  className={`text-[8.5px] font-semibold uppercase tracking-[0.04em] ${levelTone[entry.level]}`}
                 >
                   {entry.level}
                 </span>
-                <span className="break-words whitespace-pre-wrap text-white/65">
+                <span className="break-words whitespace-pre-wrap text-ink-soft">
                   {entry.message}
                 </span>
               </li>
             ))}
           </ol>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center px-6 py-14 text-center">
-            <span className="grid size-12 place-items-center rounded-2xl border border-white/10 bg-white/5 text-white/35">
-              <Terminal size={24} />
+          <div className="flex h-full flex-col items-center justify-center px-6 py-12 text-center">
+            <span className="grid size-9 place-items-center rounded-[3px] border border-line bg-canvas text-teal">
+              <Terminal size={20} />
             </span>
-            <strong className="mt-4 text-xs font-medium text-white/65">
+            <strong className="mt-3 text-xs font-medium text-ink">
               {entries.length ? '没有该级别的日志' : '等待运行输出'}
             </strong>
-            <p className="mt-1.5 max-w-xs text-[11px] leading-relaxed text-white/30">
+            <p className="mt-1 max-w-xs text-[10.5px] leading-snug text-muted">
               {entries.length
                 ? '切换日志级别，查看其他运行消息。'
                 : '启动后，Agent 的运行日志将在这里实时显示。'}
@@ -153,10 +133,10 @@ export function LogsPanel({ entries, runId, active }: Props) {
         )}
       </div>
 
-      <footer className="flex items-center justify-between gap-3 border-t border-white/10 px-5 py-3 font-mono text-[10px] text-white/35 sm:px-6">
-        <span className="flex items-center gap-2">
+      <footer className="flex items-center justify-between gap-2 border-t border-line bg-surface-subtle px-4 py-2 font-mono text-[9.5px] text-faint">
+        <span className="flex items-center gap-1.5">
           <span
-            className={`size-1.5 rounded-full ${runId ? 'bg-lime' : 'bg-white/25'}`}
+            className={`size-1.5 rounded-full ${runId ? 'bg-teal' : 'bg-line-strong'}`}
             aria-hidden="true"
           />
           {runId ? `运行 ${runId.slice(0, 8)}` : '尚未创建运行'}

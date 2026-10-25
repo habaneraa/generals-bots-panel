@@ -17,8 +17,8 @@ type Props = {
 
 function SectionLabel({ index, children }: { index: string; children: string }) {
   return (
-    <div className="mb-4 flex items-center gap-3">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-moss">
+    <div className="mb-3 flex items-center gap-2">
+      <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-teal">
         {index} · {children}
       </span>
       <span className="h-px flex-1 bg-line" />
@@ -30,16 +30,16 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
   const { draft, errors, dirty, update, validate } = useRunConfig(config);
   const locked = running || pending !== null;
   const badge = running ? (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-[10px] font-medium text-muted">
-      <LockKeyhole size={11} aria-hidden="true" /> 运行中已锁定
+    <span className="inline-flex items-center gap-1 rounded-[2px] border border-line bg-canvas px-1.5 py-0.5 text-[9px] font-medium text-muted">
+      <LockKeyhole size={10} aria-hidden="true" /> 运行中已锁定
     </span>
   ) : dirty ? (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-warn/25 bg-warn/[0.08] px-2.5 py-1 text-[10px] font-medium text-warn">
+    <span className="inline-flex items-center gap-1 rounded-[2px] border border-warn/25 bg-warn/[0.06] px-1.5 py-0.5 text-[9px] font-medium text-warn">
       <span className="size-1 rounded-full bg-warn" aria-hidden="true" /> 有未保存更改
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-forest-700/15 bg-forest-900/[0.05] px-2.5 py-1 text-[10px] font-medium text-moss">
-      <Check size={11} aria-hidden="true" /> 已同步配置
+    <span className="inline-flex items-center gap-1 rounded-[2px] border border-teal-line bg-teal-soft/60 px-1.5 py-0.5 text-[9px] font-medium text-teal-dark">
+      <Check size={10} aria-hidden="true" /> 已同步配置
     </span>
   );
   const described = (id: string) => ({
@@ -62,11 +62,11 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
 
   return (
     <section id="configuration" className="panel" aria-labelledby="config-heading">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-7 sm:py-5">
+      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-line px-4 py-3">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 id="config-heading" className="panel-heading">
-              <Settings2 size={17} /> 运行参数
+              <Settings2 size={14} /> 运行参数
             </h2>
             {badge}
           </div>
@@ -77,9 +77,9 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
       <form id="run-config" onSubmit={(event) => void onSubmit(event)} noValidate>
         <fieldset className="min-w-0" disabled={locked}>
           <legend className="sr-only">运行配置</legend>
-          <div className="px-5 py-5 sm:px-7 sm:py-6">
+          <div className="px-4 py-4">
             <SectionLabel index="01">Agent 与账号</SectionLabel>
-            <div className="grid gap-x-4 gap-y-5 sm:grid-cols-2">
+            <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
               <ConfigField
                 id="command"
                 label="Agent 命令（必填）"
@@ -89,7 +89,7 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
               >
                 <input
                   {...described('command')}
-                  className="input font-mono text-[13px]"
+                  className="input font-mono text-[12px]"
                   value={draft.command}
                   onChange={(event) => update('command', event.target.value)}
                   placeholder="例如 bash"
@@ -123,7 +123,7 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
               >
                 <input
                   {...described('userIdFile')}
-                  className="input font-mono text-[13px]"
+                  className="input font-mono text-[12px]"
                   value={draft.userIdFile}
                   onChange={(event) => update('userIdFile', event.target.value)}
                   placeholder="browser_agent/.user-id"
@@ -140,7 +140,7 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
               >
                 <input
                   {...described('cwd')}
-                  className="input font-mono text-[13px]"
+                  className="input font-mono text-[12px]"
                   value={draft.cwd}
                   onChange={(event) => update('cwd', event.target.value)}
                   placeholder="/path/to/agent"
@@ -150,10 +150,10 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
               </ConfigField>
             </div>
 
-            <div className="mt-7">
+            <div className="mt-5">
               <SectionLabel index="02">对局与调度</SectionLabel>
             </div>
-            <div className="grid gap-x-4 gap-y-5 sm:grid-cols-2">
+            <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
               <ConfigField
                 id="server"
                 label="游戏服务器"
@@ -243,7 +243,7 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
               </ConfigField>
             </div>
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <ToggleField
                 id="autopilot"
                 label="自动连续对局"
@@ -262,8 +262,8 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
           </div>
         </fieldset>
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-canvas/50 px-5 py-4 sm:px-7">
-          <span className="text-[11px] leading-relaxed text-faint">
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface-subtle px-4 py-2.5">
+          <span className="text-[10px] leading-snug text-faint">
             {running ? '停止运行后可修改参数' : '启动会保存并使用当前表单参数'}
           </span>
           <button
@@ -273,19 +273,19 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
             value="save"
             disabled={locked}
           >
-            {pending === 'save' ? <Spinner /> : <Save size={14} />}
+            {pending === 'save' ? <Spinner /> : <Save size={12} />}
             {pending === 'save' ? '正在保存' : '保存参数'}
           </button>
         </footer>
       </form>
 
       {Object.keys(errors).length > 0 && (
-        <div className="px-5 pb-5 sm:px-7">
+        <div className="px-4 pb-3">
           <Notice>参数校验未通过，请检查标红的字段后重试。</Notice>
         </div>
       )}
       {actionError && (
-        <div className="px-5 pb-5 sm:px-7">
+        <div className="px-4 pb-3">
           <Notice>{actionError}</Notice>
         </div>
       )}
