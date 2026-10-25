@@ -164,7 +164,12 @@ export function MatchDetails({ match }: { match: MatchRecord }) {
       ? '未采集'
       : `${(details.durationMs / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 3 })} 秒`;
   const endReason = details ? (details.endReason ?? '服务器未提供') : '未采集';
-  const winner = details ? formatCount(details.winnerIndex) : '未采集';
+  const winner = !details
+    ? '未采集'
+    : details.winnerIndex === null
+      ? '服务器未提供'
+      : (players.find((player) => player.index === details.winnerIndex)?.username ??
+        `玩家 #${details.winnerIndex}`);
 
   return (
     <div className="space-y-3 p-3.5 sm:p-4">
@@ -172,7 +177,7 @@ export function MatchDetails({ match }: { match: MatchRecord }) {
         <Metric label="时长">{duration}</Metric>
         <Metric label="已记录回合">{formatCount(match.turns)}</Metric>
         <Metric label="终局原因">{endReason}</Metric>
-        <Metric label="获胜玩家索引">{winner}</Metric>
+        <Metric label="获胜玩家">{winner}</Metric>
       </dl>
 
       <dl className="grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4">
