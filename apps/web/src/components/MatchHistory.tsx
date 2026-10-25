@@ -5,6 +5,7 @@ import { useMatchHistory } from '../hooks/useMatchHistory';
 import { HistoryFilters } from './HistoryFilters';
 import { MatchDetailsModal } from './MatchDetailsModal';
 import { MatchHistoryRow } from './MatchHistoryRow';
+import { StarHistoryChart } from './StarHistoryChart';
 import { EmptyState, Notice, Spinner } from './Shared';
 
 type Props = {
@@ -32,7 +33,6 @@ export function MatchHistory({ refreshKey }: Props) {
               </span>
             )}
           </div>
-          <p className="panel-caption">查询真实对局记录，点击详情打开完整快照。</p>
         </div>
         {data && (
           <span className="rounded-[2px] border border-line bg-canvas px-2 py-0.5 text-[9.5px] font-medium tabular text-muted">
@@ -42,6 +42,8 @@ export function MatchHistory({ refreshKey }: Props) {
       </header>
 
       <HistoryFilters onApply={applyFilters} />
+
+      {data && <StarHistoryChart matches={data.items} />}
 
       {error && (
         <div className="px-4 py-2.5">
@@ -70,9 +72,11 @@ export function MatchHistory({ refreshKey }: Props) {
             <thead>
               <tr>
                 <th>时间</th>
-                <th>对手 / 对局</th>
+                <th>对手</th>
+                <th>对局 ID</th>
                 <th className="hidden sm:table-cell">回合</th>
                 <th>结果</th>
+                <th>Star 变化</th>
                 <th className="text-right">操作</th>
               </tr>
             </thead>

@@ -2,6 +2,7 @@ import { ArrowUpRight, ChevronRight } from 'lucide-react';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
 import { formatDateTime, replayHref } from '../lib/format';
 import { OutcomeBadge } from './OutcomeBadge';
+import { StarChange } from './StarChange';
 
 export function MatchHistoryRow({ match, onOpen }: { match: MatchRecord; onOpen: () => void }) {
   const replay = replayHref(match.replayUrl);
@@ -18,11 +19,13 @@ export function MatchHistoryRow({ match, onOpen }: { match: MatchRecord; onOpen:
         >
           {match.opponent || '—'}
         </span>
-        <span className="mt-0.5 flex items-center gap-1 text-[9.5px] text-faint">
-          <span className="mono max-w-[120px] truncate" title={match.gameId}>
+      </td>
+      <td>
+        <span className="flex max-w-[190px] items-center gap-1.5">
+          <span className="mono truncate text-[9.5px] text-faint" title={match.gameId}>
             {match.gameId || '等待分配'}
           </span>
-          <span className="rounded-[2px] bg-canvas px-1 py-px text-[8.5px] uppercase tracking-[0.06em] text-muted">
+          <span className="shrink-0 rounded-[2px] bg-canvas px-1 py-px text-[8.5px] uppercase tracking-[0.06em] text-muted">
             {match.server}
           </span>
         </span>
@@ -32,6 +35,9 @@ export function MatchHistoryRow({ match, onOpen }: { match: MatchRecord; onOpen:
       </td>
       <td>
         <OutcomeBadge outcome={match.outcome} />
+      </td>
+      <td>
+        <StarChange match={match} />
       </td>
       <td className="text-right">
         <div className="flex items-center justify-end gap-2 whitespace-nowrap">

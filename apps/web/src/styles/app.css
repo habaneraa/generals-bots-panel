@@ -239,7 +239,7 @@
 
   .match-table tr.match-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: start;
     gap: 0.25rem 0.6rem;
     padding: 0.55rem 0.75rem;
@@ -266,14 +266,22 @@
     grid-area: 2 / 1;
   }
 
-  .match-table tr.match-row > td:nth-child(4) {
+  .match-table tr.match-row > td:nth-child(3) {
+    grid-area: 2 / 2;
+  }
+
+  .match-table tr.match-row > td:nth-child(5) {
     grid-area: 1 / 2;
     text-align: right;
   }
 
-  .match-table tr.match-row > td:nth-child(5) {
-    grid-area: 2 / 2;
-    align-self: end;
+  .match-table tr.match-row > td:nth-child(6) {
+    grid-area: 3 / 1;
+  }
+
+  .match-table tr.match-row > td:nth-child(7) {
+    grid-area: 3 / 2;
+    align-self: center;
     text-align: right;
   }
 }

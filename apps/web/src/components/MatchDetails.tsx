@@ -1,4 +1,5 @@
 import { Star } from 'lucide-react';
+import { StarChange } from './StarChange';
 import type { ReactNode } from 'react';
 import type {
   MatchAgentStats,
@@ -186,6 +187,12 @@ export function MatchDetails({ match }: { match: MatchRecord }) {
         </Detail>
         <Detail label="结束时间">
           {match.endedAt ? <TimeText value={match.endedAt} /> : '尚未记录结束'}
+        </Detail>
+        <Detail label="Star 变化">
+          <StarChange match={match} />
+          {match.rating?.source === 'public-profile' && (
+            <p className="mt-1 text-[9px] text-faint">公开资料采样，可能有结算延迟</p>
+          )}
         </Detail>
         <Detail label="服务器">{match.server}</Detail>
         <Detail label="对手">{match.opponent || '服务器未提供'}</Detail>
