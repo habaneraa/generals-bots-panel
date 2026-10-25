@@ -1,3 +1,4 @@
+import type { Replay } from '../../../../packages/contracts/src/replay';
 import type {
   Dashboard,
   MatchFilters,
@@ -34,6 +35,8 @@ function mutation<T>(path: string, method: 'POST' | 'PUT', config?: RunConfig): 
 
 export const api = {
   dashboard: (signal: AbortSignal): Promise<Dashboard> => request('/api/dashboard', { signal }),
+  replay: (server: string, gameId: string, signal: AbortSignal): Promise<Replay> =>
+    request(`/api/replays/${encodeURIComponent(server)}/${encodeURIComponent(gameId)}`, { signal }),
   matches: (filters: MatchFilters, page: number, signal: AbortSignal): Promise<MatchPage> => {
     const query = new URLSearchParams({ page: String(page), pageSize: '20' });
     for (const [key, value] of Object.entries(filters)) {

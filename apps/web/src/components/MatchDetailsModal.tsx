@@ -1,7 +1,7 @@
 import { ArrowUpRight, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
-import { replayHref } from '../lib/format';
+import { localReplayHref, replayHref } from '../lib/format';
 import { MatchDetails } from './MatchDetails';
 import { OutcomeBadge } from './OutcomeBadge';
 
@@ -34,6 +34,7 @@ export function MatchDetailsModal({
   }, [matchId]);
 
   if (!match) return null;
+  const localReplay = localReplayHref(match);
   const replay = replayHref(match.replayUrl);
 
   return (
@@ -64,6 +65,16 @@ export function MatchDetailsModal({
             </span>
           </div>
           <div className="flex items-center gap-1.5">
+            {localReplay && (
+              <a
+                className="btn btn-primary btn-sm"
+                href={localReplay}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                站内录像 <ArrowUpRight size={11} aria-hidden="true" />
+              </a>
+            )}
             {replay && (
               <a
                 className="btn btn-secondary btn-sm"
@@ -71,7 +82,7 @@ export function MatchDetailsModal({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                回放 <ArrowUpRight size={11} aria-hidden="true" />
+                官网回放 <ArrowUpRight size={11} aria-hidden="true" />
               </a>
             )}
             <button

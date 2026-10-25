@@ -1,10 +1,11 @@
-import { ChartNoAxesCombined, History, Play, Terminal } from 'lucide-react';
+import { ChartNoAxesCombined, Clapperboard, History, Play, Terminal } from 'lucide-react';
 import { useRef, type KeyboardEvent } from 'react';
 
 const tabs = [
   { id: 'start', label: '启动', caption: '运行与参数', icon: Play },
   { id: 'stats', label: '统计', caption: '真实对局概览', icon: ChartNoAxesCombined },
   { id: 'history', label: '对局记录', caption: '历史与详情', icon: History },
+  { id: 'replay', label: '录像', caption: '本地对局回看', icon: Clapperboard },
   { id: 'logs', label: '日志', caption: '实时输出', icon: Terminal },
 ] as const;
 

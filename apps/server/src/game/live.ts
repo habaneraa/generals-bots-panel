@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { GameSocket, abortError } from './socket.js';
 import { GameState } from './state.js';
 import { fetchDuelStars } from './ratings.js';
+import { ReplayRecorder } from '../storage/replays.js';
 import { isGameEnd } from './types.js';
 import type { AgentAction, GameConnection, GameEnd, GameFrame, SubmitStatus } from './types.js';
 
@@ -26,6 +27,7 @@ function identity(frame: GameFrame): string {
 /** Direct game connection. Chrome, CDP and browser scheduling are not involved. */
 export class SocketGame implements GameConnection {
   private readonly state = new GameState();
+  private recorder: ReplayRecorder;
   private readonly socket: GameSocket;
   private readonly userId: string;
   private readonly listeners = new Set<() => void>();
@@ -48,6 +50,7 @@ export class SocketGame implements GameConnection {
     private readonly log?: (message: string) => void,
   ) {
     this.userId = userId.trim();
+    this.recorder = new ReplayRecorder(server, this.log);
     if (!this.userId) throw new Error('A game account ID is required');
     this.socket = new GameSocket(
       endpoint ?? `${SERVERS[server]}/socket.io/?EIO=4&transport=websocket`,
@@ -60,6 +63,16 @@ export class SocketGame implements GameConnection {
           }
           if (event.startsWith('game_')) {
             this.state.update(event, args[0]);
+            if (event === 'game_start' || event === 'game_update') {
+              const frame = this.state.current();
+              if (frame && !isGameEnd(frame)) {
+                try {
+                  this.recorder.capture(frame);
+                } catch {
+                  this.recorder.truncate('本地录像采集失败，已保留有效前缀');
+                }
+              }
+            }
             if (event === 'game_start') this.collectStars();
             this.notify();
           }
@@ -94,6 +107,7 @@ export class SocketGame implements GameConnection {
     this.assertOpen(signal);
     if (this.waiting) throw new Error('A game state wait is already active');
     this.state.reset();
+    this.recorder = new ReplayRecorder(this.server, this.log);
     this.attackIndex = this.pendingIndex = 0;
     this.gameIdentity = this.gameId = null;
     this.socket.emit('leave_game');
@@ -106,6 +120,14 @@ export class SocketGame implements GameConnection {
     this.gameId = value.gameId;
     if (!isGameEnd(value)) this.gameIdentity = identity(value);
     return this.finishRating(value, signal);
+  }
+
+  getReplay() {
+    return this.recorder.getReplay();
+  }
+
+  recordAction(frame: GameFrame, action: AgentAction, status: SubmitStatus): void {
+    this.recorder.recordAction(frame, action, status);
   }
 
   getResult(): GameEnd | null {
@@ -283,6 +305,7 @@ export class SocketGame implements GameConnection {
           if (this.closed) throw new Error('Game connection closed');
           const value = select();
           if (value) {
+            if (!isGameEnd(value)) this.recorder.bindFrame(value);
             cleanup();
             resolve(value);
           }

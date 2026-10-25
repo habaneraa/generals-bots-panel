@@ -10,6 +10,7 @@ import { ConnectionBadge, Notice, Spinner } from './components/Shared';
 import { StatsOverview } from './components/StatsOverview';
 import { useDashboard } from './hooks/useDashboard';
 import { isRunning } from './lib/format';
+import { ReplayWorkspace } from './replay/ReplayWorkspace';
 
 const tabMeta: Record<TabId, { title: string; description: string }> = {
   start: {
@@ -24,13 +25,17 @@ const tabMeta: Record<TabId, { title: string; description: string }> = {
     title: '对局记录',
     description: '检索全部历史对局，打开详情查看最后记录的快照与 Agent 计步。',
   },
+  replay: {
+    title: '录像播放器',
+    description: '读取本机对局录像，逐帧回看决策与战局变化。',
+  },
   logs: {
     title: '运行日志',
     description: '跟随当前运行的事件流，下载本轮完整 JSONL 日志。',
   },
 };
 
-export function App() {
+function DashboardApp() {
   const { dashboard, connection, loadError, actionError, pending, retry, save, start, stop } =
     useDashboard();
   const [activeTab, setActiveTab] = useState<TabId>('start');
@@ -196,6 +201,15 @@ export function App() {
                 <MatchHistory refreshKey={JSON.stringify(dashboard.matches)} />
               </div>
               <div
+                id="panel-replay"
+                className="pt-4"
+                role="tabpanel"
+                aria-labelledby="tab-replay"
+                hidden={activeTab !== 'replay'}
+              >
+                <ReplayWorkspace active={activeTab === 'replay'} />
+              </div>
+              <div
                 id="panel-logs"
                 className="pt-4"
                 role="tabpanel"
@@ -248,4 +262,24 @@ export function App() {
       </div>
     </div>
   );
+}
+
+export function App() {
+  if (window.location.pathname === '/replay') {
+    return (
+      <main className="mx-auto max-w-[1320px] p-4 sm:p-6">
+        <header className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="meta-label text-teal">GENERALS / LOCAL REPLAY</p>
+            <h1 className="mt-1 text-xl font-semibold text-ink">录像播放器</h1>
+          </div>
+          <a className="btn btn-secondary btn-sm" href="/">
+            返回控制台
+          </a>
+        </header>
+        <ReplayWorkspace />
+      </main>
+    );
+  }
+  return <DashboardApp />;
 }

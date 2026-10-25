@@ -7,6 +7,7 @@ import { z, ZodError } from 'zod';
 import { matchQuerySchema } from '../../../packages/contracts/src/index.js';
 import type { Controller } from './controller.js';
 import { HttpError } from './errors.js';
+import { replayAddressSchema } from './storage/replays.js';
 
 export async function createApp(controller: Controller, webDir: string, port = 3000) {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
@@ -55,6 +56,21 @@ export async function createApp(controller: Controller, webDir: string, port = 3
   app.get('/api/matches', async (request) => {
     const { page, pageSize, ...filters } = matchQuerySchema.parse(request.query);
     return controller.repository.matches(page, pageSize, filters);
+  });
+  app.get('/api/replays/:server/:gameId', async (request) => {
+    const { server, gameId } = replayAddressSchema.parse(request.params);
+    const replay = await controller.replays.load(server, gameId);
+    if (!replay) throw new HttpError(404, '本地录像不存在');
+    return replay;
+  });
+  app.get('/api/replays/:server/:gameId/download', async (request, reply) => {
+    const { server, gameId } = replayAddressSchema.parse(request.params);
+    const packed = await controller.replays.packed(server, gameId);
+    if (!packed) throw new HttpError(404, '本地录像不存在');
+    return reply
+      .type('application/gzip')
+      .header('Content-Disposition', `attachment; filename="${gameId}.json.gz"`)
+      .send(packed);
   });
   app.get('/api/runs/:id/logs/download', async (request, reply) => {
     const { id } = z.object({ id: z.uuid() }).parse(request.params);

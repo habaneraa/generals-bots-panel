@@ -1,3 +1,4 @@
+import type { Replay, ReplaySubmitStatus } from '../../../../packages/contracts/src/replay.js';
 import type {
   RunConfig,
   Outcome,
@@ -33,6 +34,8 @@ export interface Observation {
   features: { deserts: number[]; swamps: number[]; tunnels: number[][] };
 }
 export interface GameFrame {
+  /** Internal recording identity; never sent to the external agent. */
+  replayFrameIndex?: number;
   gameId: string;
   startedAt?: string;
   observation: Observation;
@@ -59,8 +62,10 @@ export interface AgentAction {
   split: boolean;
   value: number | null;
 }
-export type SubmitStatus = 'sent' | 'pass' | 'stale' | 'rejected' | 'dry-run';
+export type SubmitStatus = ReplaySubmitStatus;
 export interface GameConnection {
+  getReplay?(): Replay | null;
+  recordAction?(frame: GameFrame, action: AgentAction, status: SubmitStatus): void;
   getResult?(): GameEnd | null;
   getSnapshot?(): { gameId: string; snapshot: MatchSnapshot; rating?: MatchRating } | null;
   connect(signal: AbortSignal): Promise<void>;

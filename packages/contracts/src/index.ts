@@ -102,6 +102,7 @@ export interface MatchRecord {
   outcome: Outcome | null;
   turns: number;
   replayUrl: string | null;
+  localReplay?: boolean;
   details?: MatchDetails;
   rating?: MatchRating;
 }

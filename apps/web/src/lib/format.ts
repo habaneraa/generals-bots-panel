@@ -1,4 +1,4 @@
-import type { Outcome, RunPhase } from '../../../../packages/contracts/src/index';
+import type { MatchRecord, Outcome, RunPhase } from '../../../../packages/contracts/src/index';
 
 export const phaseLabels: Record<RunPhase, string> = {
   idle: '等待启动',
@@ -45,6 +45,14 @@ export function formatDateTime(value: string | null): string {
     minute: '2-digit',
     hour12: false,
   });
+}
+
+export function localReplayHref(
+  match: Pick<MatchRecord, 'localReplay' | 'server' | 'gameId'>,
+): string | undefined {
+  return match.localReplay && match.gameId
+    ? `/replay#replay=${match.server}/${encodeURIComponent(match.gameId)}`
+    : undefined;
 }
 
 export function replayHref(value: string | null): string | undefined {

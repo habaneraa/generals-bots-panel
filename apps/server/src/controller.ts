@@ -22,9 +22,11 @@ import {
 } from './game/types.js';
 import { HttpError } from './errors.js';
 import { RunLog } from './storage/logs.js';
+import { ReplayRecorder, ReplayStore, finishReplay } from './storage/replays.js';
 import type { Repository } from './storage/repository.js';
 
 export class Controller {
+  readonly replays: ReplayStore;
   private state: RunState;
   private log: RunLog | null;
   private task: Promise<void> | null = null;
@@ -38,9 +40,12 @@ export class Controller {
     private readonly gameFactory: GameFactory = async (config) => {
       const userId = (await readFile(resolve(root, config.userIdFile), 'utf8')).trim();
       if (!userId || userId.length > 4096) throw new Error('账号文件为空或长度非法');
-      return new SocketGame(config.server, userId);
+      return new SocketGame(config.server, userId, undefined, (message) =>
+        this.writeLog(message.startsWith('本地录像') ? 'warn' : 'debug', message),
+      );
     },
   ) {
+    this.replays = new ReplayStore(repository.dataDir);
     const run = repository.latestRun();
     this.state = {
       run,
@@ -245,6 +250,27 @@ export class Controller {
     }
   }
 
+  private async saveReplay(
+    match: MatchRecord,
+    game: GameConnection | null,
+    fallback: ReplayRecorder | null,
+  ): Promise<void> {
+    if (match.localReplay) return;
+    try {
+      const replay = game?.getReplay?.() ?? fallback?.getReplay();
+      if (!replay || replay.gameId !== match.gameId) return;
+      await this.replays.save(finishReplay(replay, match));
+      match.localReplay = true;
+      this.repository.putMatch(match);
+      this.notify();
+    } catch (error) {
+      this.writeLog(
+        'warn',
+        `本地录像保存失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   private agentConfig(config: RunConfig): RunConfig {
     return { ...config, cwd: config.cwd ? resolve(this.root, config.cwd) : this.root };
   }
@@ -253,6 +279,7 @@ export class Controller {
     let game: GameConnection | null = null;
     let agent: AgentProcess | null = null;
     let failed: Error | null = null;
+    let fallback: ReplayRecorder | null = null;
     let began = false;
     try {
       game = await this.gameFactory(config);
@@ -270,6 +297,10 @@ export class Controller {
         this.writeLog('info', `等待 1v1 对局（${index + 1}/${limit}）`);
         let current = await game.join(signal);
         const match = this.newMatch(current, config);
+        fallback = game.getReplay
+          ? null
+          : new ReplayRecorder(config.server, (message) => this.writeLog('warn', message));
+        if (!isGameEnd(current)) fallback?.capture(current);
         const details = match.details!;
         began = false;
         if (!isGameEnd(current)) {
@@ -314,6 +345,8 @@ export class Controller {
             signal.throwIfAborted();
             this.state.agentLatencyMs = Math.round((performance.now() - started) * 10) / 10;
             const status = config.dryRun ? 'dry-run' : game.submit(frame, action);
+            game.recordAction?.(frame, action, status);
+            fallback?.recordAction(frame, action, status);
             details.agent.decisions++;
             details.agent.totalLatencyMs += this.state.agentLatencyMs;
             details.agent.maxLatencyMs = Math.max(
@@ -334,10 +367,12 @@ export class Controller {
               `turn=${lastTurn} action=${JSON.stringify(action)} status=${status} agent=${this.state.agentLatencyMs}ms`,
             );
             current = await game.next(lastTurn, signal);
+            if (!isGameEnd(current)) fallback?.capture(current);
           }
         }
         this.completeMatch(match, current, began);
         if (began) agent?.end();
+        await this.saveReplay(match, game, fallback);
         if (index + 1 < limit) {
           this.state.nextGameAt = new Date(Date.now() + config.cooldownMs).toISOString();
           this.setPhase('cooldown');
@@ -384,6 +419,7 @@ export class Controller {
       } catch (error) {
         failed ??= error as Error;
       }
+      if (match) await this.saveReplay(match, game, fallback);
       try {
         await agent?.close();
       } catch (error) {

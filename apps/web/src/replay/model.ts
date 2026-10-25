@@ -1,0 +1,105 @@
+import {
+  parseReplay,
+  type Replay,
+  type ReplayAction,
+} from '../../../../packages/contracts/src/replay';
+
+export const playerColors = [
+  '#dc4646',
+  '#4664dc',
+  '#3c9646',
+  '#9646be',
+  '#dc7828',
+  '#289696',
+  '#a02864',
+  '#6e5028',
+];
+export const statusNames = {
+  sent: '已提交',
+  pass: 'Pass',
+  stale: '过期未提交',
+  rejected: '被拒绝',
+  'dry-run': '仅决策',
+} as const;
+
+/** First recorded frame at or after the requested turn (turns can have gaps). */
+export function frameForTurn(replay: Replay, turn: number): number {
+  let low = 0;
+  let high = replay.frames.length - 1;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (replay.frames[middle]!.turn < turn) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+export function actionWindow(
+  actions: readonly ReplayAction[],
+  frame: number,
+  history: boolean,
+  player: number | null,
+): ReplayAction[] {
+  // Actions are chronological; binary-search the end rather than filtering an entire game per paint.
+  let low = 0;
+  let high = actions.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (actions[middle]!.frame <= frame) low = middle + 1;
+    else high = middle;
+  }
+  const result: ReplayAction[] = [];
+  for (let index = low - 1; index >= Math.max(0, low - 64); index--) {
+    const action = actions[index]!;
+    if (action.frame < frame - (history ? 12 : 0)) break;
+    if (player === null || action.player === player) result.push(action);
+  }
+  return result.reverse();
+}
+
+export function replayAddress(server: string, gameId: string): string {
+  return `/api/replays/${encodeURIComponent(server)}/${encodeURIComponent(gameId)}`;
+}
+
+export function replaySource(hash: string): { server: 'generals' | 'bots'; gameId: string } | null {
+  const match = /^#replay=(generals|bots)\/([^/]+)$/.exec(hash);
+  if (!match) return null;
+  try {
+    return { server: match[1] as 'generals' | 'bots', gameId: decodeURIComponent(match[2]!) };
+  } catch {
+    return null;
+  }
+}
+
+export function elapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+export async function readReplayFile(file: File): Promise<Replay> {
+  const limit = 64 * 1024 * 1024;
+  if (file.size > limit) throw new Error('录像文件不能超过 64 MiB');
+  const magic = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+  let stream = file.stream();
+  if (magic[0] === 0x1f && magic[1] === 0x8b) {
+    stream = stream.pipeThrough(new DecompressionStream('gzip'));
+  }
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new Error('解压后的录像不能超过 64 MiB');
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return parseReplay(JSON.parse(text));
+  } finally {
+    await reader.cancel();
+    reader.releaseLock();
+  }
+}
