@@ -11,6 +11,7 @@ import { FixtureGame, fixtureObservation } from '../../../test/fixtures/game.js'
 import { AgentProcess } from './agent/process.js';
 import { Controller } from './controller.js';
 import { Repository } from './storage/repository.js';
+import { RunLog } from './storage/logs.js';
 import { createApp } from './app.js';
 
 const defaultConfig = {
@@ -435,37 +436,60 @@ describe('run lifecycle with isolated test inputs', () => {
     },
   );
 
-  it('retains the original failure while reporting both cleanup failures', async () => {
-    const game = new FixtureGame();
-    vi.spyOn(game, 'close').mockImplementation(() => {
-      throw 'game close failed';
-    });
-    const agent = {
-      begin: vi.fn(),
-      act: vi.fn(async () => {
-        throw new Error('inference failed');
-      }),
-      close: vi.fn(async () => {
-        throw 'agent close failed';
-      }),
-    };
-    vi.spyOn(AgentProcess, 'start').mockResolvedValue(agent as unknown as AgentProcess);
-    const { controller } = setup(game);
-    controller.start(defaultConfig);
-    await idle(controller);
-    const dashboard = controller.dashboard();
-    expect(dashboard.state).toMatchObject({ phase: 'failed', run: { error: 'inference failed' } });
-    expect(
-      dashboard.logs.filter((entry) => entry.level === 'error').map((entry) => entry.message),
-    ).toEqual(
-      expect.arrayContaining([
-        'inference failed',
+  it.each([false, true])(
+    'retains the original failure with cleanup log writes failing=%s',
+    async (logWritesFail) => {
+      const fallback = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const writeFailure = new Error('log disk unavailable');
+      if (logWritesFail) {
+        const write = RunLog.prototype.write;
+        vi.spyOn(RunLog.prototype, 'write').mockImplementation(function (
+          this: RunLog,
+          level,
+          message,
+        ) {
+          if (message.startsWith('关闭')) throw writeFailure;
+          return write.call(this, level, message);
+        });
+      }
+      const game = new FixtureGame();
+      vi.spyOn(game, 'close').mockImplementation(() => {
+        throw 'game close failed';
+      });
+      const agent = {
+        begin: vi.fn(),
+        act: vi.fn(async () => {
+          throw new Error('inference failed');
+        }),
+        close: vi.fn(async () => {
+          throw 'agent close failed';
+        }),
+      };
+      vi.spyOn(AgentProcess, 'start').mockResolvedValue(agent as unknown as AgentProcess);
+      const { controller, repository } = setup(game);
+      controller.start(defaultConfig);
+      await idle(controller);
+      const dashboard = controller.dashboard();
+      expect(dashboard.state).toMatchObject({
+        phase: 'failed',
+        run: { error: 'inference failed' },
+      });
+      expect(repository.latestRun()).toMatchObject({ phase: 'failed', error: 'inference failed' });
+      const cleanupMessages = [
         '关闭游戏连接失败：game close failed',
         '关闭 agent 进程失败：agent close failed',
-      ]),
-    );
-    expect(agent.close).toHaveBeenCalledOnce();
-  });
+      ];
+      if (logWritesFail) {
+        for (const message of cleanupMessages)
+          expect(fallback).toHaveBeenCalledWith(message, writeFailure);
+      } else {
+        expect(
+          dashboard.logs.filter((entry) => entry.level === 'error').map((entry) => entry.message),
+        ).toEqual(expect.arrayContaining(cleanupMessages));
+      }
+      expect(agent.close).toHaveBeenCalledOnce();
+    },
+  );
 
   it('validates requests and rejects cross-site command execution', async () => {
     const { controller } = setup();

@@ -95,6 +95,15 @@ export class Controller {
     this.notify();
   }
 
+  private writeCleanupError(message: string): void {
+    // 磁盘故障不能让诊断阻断其他资源的关闭，写入失败时退回终端。
+    try {
+      this.writeLog('error', message);
+    } catch (error) {
+      console.error(message, toError(error));
+    }
+  }
+
   private setPhase(phase: RunPhase): void {
     this.state.phase = phase;
     if (this.state.run) {
@@ -407,7 +416,7 @@ export class Controller {
       } catch (error) {
         const cleanupError = toError(error);
         failed ??= cleanupError;
-        this.writeLog('error', `关闭游戏连接失败：${cleanupError.message}`);
+        this.writeCleanupError(`关闭游戏连接失败：${cleanupError.message}`);
       }
       if (match) await this.saveReplay(match, game, fallback);
       try {
@@ -415,7 +424,7 @@ export class Controller {
       } catch (error) {
         const cleanupError = toError(error);
         failed ??= cleanupError;
-        this.writeLog('error', `关闭 agent 进程失败：${cleanupError.message}`);
+        this.writeCleanupError(`关闭 agent 进程失败：${cleanupError.message}`);
       }
       this.state.nextGameAt = null;
       this.state.run!.endedAt = new Date().toISOString();
