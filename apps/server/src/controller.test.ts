@@ -1,13 +1,14 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   defaultConfig as baseConfig,
   type MatchSnapshot,
 } from '../../../packages/contracts/src/index.js';
-import type { GameConnection } from './game/types.js';
-import { FixtureGame } from '../../../test/fixtures/game.js';
+import type { GameConnection, GameEnd } from './game/types.js';
+import { FixtureGame, fixtureObservation } from '../../../test/fixtures/game.js';
+import { AgentProcess } from './agent/process.js';
 import { Controller } from './controller.js';
 import { Repository } from './storage/repository.js';
 import { createApp } from './app.js';
@@ -61,6 +62,7 @@ function snapshot(land: number): MatchSnapshot {
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  vi.restoreAllMocks();
 });
 function setup(game: GameConnection = new FixtureGame()) {
   const dir = mkdtempSync(join(tmpdir(), 'panel-controller-'));
@@ -213,6 +215,119 @@ describe('run lifecycle with isolated test inputs', () => {
     });
     expect(repository.stats()).toMatchObject({ won: 1, interrupted: 0 });
   });
+
+  it.each(['stop-reject', 'stop-resolve', 'timeout', 'normal'] as const)(
+    'recovers a confirmed terminal result during act without double counting (%s)',
+    async (mode) => {
+      const rating = {
+        username: 'self fixture',
+        before: 10,
+        after: 11,
+        delta: 1,
+        source: 'terminal' as const,
+        capturedAt: '2026-10-25T00:00:03.000Z',
+      };
+      let result: GameEnd | null = null;
+      const terminal: GameEnd = {
+        gameId: 'act-terminal',
+        startedAt: '2026-10-25T00:00:00.000Z',
+        endedAt: '2026-10-25T00:00:03.000Z',
+        outcome: 'won',
+        turn: 2,
+        winnerIndex: 0,
+        endReason: 'game_won',
+        rating,
+        snapshot: snapshot(3),
+      };
+      const game: GameConnection = {
+        connect: async () => {},
+        join: async () => ({
+          gameId: terminal.gameId,
+          startedAt: terminal.startedAt,
+          observation: fixtureObservation(),
+          attackIndex: 0,
+          snapshot: snapshot(1),
+        }),
+        next: vi.fn(async () => terminal),
+        submit: vi.fn(() => 'pass' as const),
+        getResult: () => result,
+        getSnapshot: () =>
+          result ? { gameId: result.gameId, snapshot: result.snapshot!, rating } : null,
+        close: vi.fn(),
+      };
+      const { controller, repository } = setup(game);
+      const agent = {
+        begin: vi.fn(),
+        act: vi.fn(async () => {
+          result = terminal;
+          if (mode.startsWith('stop')) void controller.stop();
+          if (mode === 'stop-reject') throw new Error('运行已取消');
+          if (mode === 'timeout') throw new Error('agent 响应超时（mock）');
+          return { pass: true, row: 0, col: 0, direction: 0, split: false, value: null };
+        }),
+        end: vi.fn(),
+        close: vi.fn(async () => {}),
+      };
+      vi.spyOn(AgentProcess, 'start').mockResolvedValue(agent as unknown as AgentProcess);
+      controller.start(defaultConfig);
+      await idle(controller);
+      expect(controller.dashboard().state).toMatchObject({
+        phase: mode === 'timeout' ? 'failed' : 'stopped',
+        completedGames: 1,
+        run: { error: mode === 'timeout' ? 'agent 响应超时（mock）' : null },
+      });
+      expect(repository.matches().items[0]).toMatchObject({
+        outcome: 'won',
+        turns: 3,
+        endedAt: terminal.endedAt,
+        rating,
+        details: {
+          durationMs: 3000,
+          winnerIndex: 0,
+          endReason: 'game_won',
+          last: terminal.snapshot,
+        },
+      });
+      expect(repository.stats()).toMatchObject({ total: 1, won: 1, interrupted: 0 });
+      expect(game.next).toHaveBeenCalledTimes(mode === 'normal' ? 1 : 0);
+      expect(game.submit).toHaveBeenCalledTimes(mode === 'normal' ? 1 : 0);
+    },
+  );
+
+  it.each([null, 'different-game'])(
+    'does not recover an absent or mismatched terminal result (%s)',
+    async (resultId) => {
+      const game: GameConnection = {
+        connect: async () => {},
+        join: async () => ({
+          gameId: 'current-game',
+          observation: fixtureObservation(),
+          attackIndex: 0,
+        }),
+        next: vi.fn(),
+        submit: vi.fn(),
+        getResult: () =>
+          resultId ? { gameId: resultId, outcome: 'won', turn: 99, winnerIndex: 0 } : null,
+        close: vi.fn(),
+      };
+      const { controller, repository } = setup(game);
+      vi.spyOn(AgentProcess, 'start').mockResolvedValue({
+        begin: vi.fn(),
+        act: vi.fn(async () => {
+          throw new Error('agent 响应超时（mock）');
+        }),
+        close: vi.fn(async () => {}),
+      } as unknown as AgentProcess);
+      controller.start(defaultConfig);
+      await idle(controller);
+      expect(controller.dashboard().state).toMatchObject({ phase: 'failed', completedGames: 0 });
+      expect(repository.matches().items[0]).toMatchObject({
+        outcome: 'interrupted',
+        turns: 1,
+        details: { winnerIndex: null, endReason: 'error' },
+      });
+    },
+  );
 
   it('captures the latest snapshot after an agent failure', async () => {
     class LatestGame extends FixtureGame {

@@ -61,6 +61,7 @@ export interface AgentAction {
 }
 export type SubmitStatus = 'sent' | 'pass' | 'stale' | 'rejected' | 'dry-run';
 export interface GameConnection {
+  getResult?(): GameEnd | null;
   getSnapshot?(): { gameId: string; snapshot: MatchSnapshot; rating?: MatchRating } | null;
   connect(signal: AbortSignal): Promise<void>;
   join(signal: AbortSignal): Promise<GameFrame | GameEnd>;

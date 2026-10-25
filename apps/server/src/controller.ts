@@ -218,6 +218,33 @@ export class Controller {
     }
   }
 
+  private completeMatch(match: MatchRecord, result: GameEnd, began: boolean): void {
+    if (result.gameId !== match.gameId) throw new Error('终局与当前对局不匹配');
+    const completed = match.outcome !== null;
+    match.outcome = result.outcome;
+    match.endedAt = result.endedAt ?? match.endedAt ?? new Date().toISOString();
+    match.turns = Math.max(match.turns, result.turn + 1);
+    if (result.rating) match.rating = structuredClone(result.rating);
+    const details = match.details;
+    if (details) {
+      if (result.snapshot) details.last = structuredClone(result.snapshot);
+      details.durationMs =
+        began || result.startedAt
+          ? Math.max(0, Date.parse(match.endedAt) - Date.parse(match.startedAt))
+          : null;
+      details.winnerIndex = result.winnerIndex ?? null;
+      details.endReason = result.endReason ?? result.outcome;
+    }
+    this.repository.putMatch(match);
+    if (!completed) {
+      this.state.completedGames++;
+      this.writeLog(
+        'info',
+        `对局结束：${match.outcome} · ${match.turns} 回合 · ${match.replayUrl}`,
+      );
+    }
+  }
+
   private agentConfig(config: RunConfig): RunConfig {
     return { ...config, cwd: config.cwd ? resolve(this.root, config.cwd) : this.root };
   }
@@ -226,6 +253,7 @@ export class Controller {
     let game: GameConnection | null = null;
     let agent: AgentProcess | null = null;
     let failed: Error | null = null;
+    let began = false;
     try {
       game = await this.gameFactory(config);
       signal.throwIfAborted();
@@ -243,7 +271,7 @@ export class Controller {
         let current = await game.join(signal);
         const match = this.newMatch(current, config);
         const details = match.details!;
-        let began = false;
+        began = false;
         if (!isGameEnd(current)) {
           if (!agent) {
             agent = await AgentProcess.start(this.agentConfig(config), (message) =>
@@ -308,24 +336,7 @@ export class Controller {
             current = await game.next(lastTurn, signal);
           }
         }
-        if (current.gameId !== match.gameId) throw new Error('终局与当前对局不匹配');
-        match.outcome = current.outcome;
-        match.endedAt = current.endedAt ?? new Date().toISOString();
-        match.turns = Math.max(match.turns, current.turn + 1);
-        if (current.snapshot) details.last = structuredClone(current.snapshot);
-        if (current.rating) match.rating = structuredClone(current.rating);
-        details.durationMs =
-          began || current.startedAt
-            ? Math.max(0, Date.parse(match.endedAt) - Date.parse(match.startedAt))
-            : null;
-        details.winnerIndex = current.winnerIndex ?? null;
-        details.endReason = current.endReason ?? current.outcome;
-        this.repository.putMatch(match);
-        this.state.completedGames++;
-        this.writeLog(
-          'info',
-          `对局结束：${match.outcome} · ${match.turns} 回合 · ${match.replayUrl}`,
-        );
+        this.completeMatch(match, current, began);
         if (began) agent?.end();
         if (index + 1 < limit) {
           this.state.nextGameAt = new Date(Date.now() + config.cooldownMs).toISOString();
@@ -344,7 +355,17 @@ export class Controller {
       }
     } finally {
       const match = this.state.match;
-      if (match) this.refreshSnapshot(match, game);
+      if (match) {
+        try {
+          const result = game?.getResult?.();
+          if (result?.gameId === match.gameId) {
+            this.completeMatch(match, result, began);
+          }
+        } catch {
+          // An unavailable result must not hide the run's original failure.
+        }
+        this.refreshSnapshot(match, game);
+      }
       if (match && !match.outcome) {
         match.outcome = 'interrupted';
         match.endedAt = new Date().toISOString();

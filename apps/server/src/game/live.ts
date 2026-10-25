@@ -108,6 +108,11 @@ export class SocketGame implements GameConnection {
     return this.finishRating(value, signal);
   }
 
+  getResult(): GameEnd | null {
+    const current = this.state.current();
+    return current && isGameEnd(current) ? current : null;
+  }
+
   getSnapshot() {
     return this.state.getSnapshot();
   }
