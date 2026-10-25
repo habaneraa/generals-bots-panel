@@ -1,5 +1,7 @@
 # 架构
 
+> 状态：当前实现。文档分类与历史记录见[文档索引](README.md)。
+
 ## 目录与依赖方向
 
 ```text
@@ -10,19 +12,24 @@ apps/
     controller.ts       # 单运行会话、autopilot、资源生命周期
     agent/              # shell:false 子进程、协议编解码
     game/
-      types.ts          # 领域观察、动作、连接接口
+      types.ts          # 领域观察、动作、连接接口与帧身份规则
       socket.ts         # 原生 WebSocket 上的 Engine.IO / Socket.IO
       state.ts          # 增量地图、普通双人观察
       live.ts           # 真实连接、队列和动作提交
-    storage/            # JSON 配置、SQLite 历史、JSONL 日志
+      recorder.ts       # 纯内存录像采集与预算，不访问磁盘
+      ratings.ts        # 独立连接池中的可选公开评分采样
+    storage/            # JSON 配置、SQLite 历史、JSONL 日志与 gzip 录像文件
   web/                  # React 控制台与 Vite 配置
 packages/contracts/     # Zod 配置校验、前后端共享 DTO，不依赖 Node
+config/runtime.ts       # 无副作用的本机默认值与端口校验
 test/fixtures/          # 仅单元测试使用的观察和子进程夹具
 docs/
 browser_agent/          # 原始参考，不被新代码导入
 ```
 
-单个 npm 项目避免首版引入包发布和多重构建链。共享契约不依赖服务端，前端不会导入进程、文件系统或数据库模块。服务端通过 esbuild 打包，第三方依赖保持外置；前端通过 Vite 构建。Node 内置 SQLite，无原生 npm 扩展或额外数据库服务。
+当前使用单个 npm 项目，避免引入包发布和多重构建链。共享契约不依赖服务端，前端不会导入进程、文件系统或数据库模块。服务端通过 esbuild 打包，第三方依赖保持外置；前端通过 Vite 构建。Node 内置 SQLite，无原生 npm 扩展或额外数据库服务。
+
+录像录制由游戏层的 `ReplayRecorder` 在内存中完成，文件校验、gzip 和原子保存由存储层的 `ReplayStore` 完成；控制器在局末协调两者。游戏层不导入存储层，这条边界由 ESLint 约束。控制器与游戏连接复用帧身份规则，回合或兵力推进不改变对局身份。开发与生产的本机默认值集中在[运行配置](../config/runtime.ts)，环境变量只在进程入口读取，详见[配置与验证](configuration.md)。
 
 ## 两个通信边界
 
@@ -41,7 +48,7 @@ React ── HTTP + SSE ── Node Controller ── stdin/stdout ── 外部
 
 ## 前端布局
 
-桌面端使用左侧固定导航，移动端折叠为顶部横向 Tab；四个页面为「启动 / 统计 / 对局记录 / 日志」，默认启动页。统一浅色主题，主色为 `#008080`，控件使用 2–4px 小圆角。样式由 Tailwind CSS v4 与 `apps/web/src/styles/app.css` 中的设计令牌生成。日志页同样使用浅色面板，不混用深色区块。面板常驻挂载，使用 `hidden` 控制显示，切换不丢未保存的表单草稿，也不影响 SSE 或运行任务。对局详情使用原生 `<dialog>` modal，支持 Esc、遮罩点击关闭和焦点恢复。Tab 支持方向键、Home / End 与标准 ARIA 语义；日志页重新显示时按用户的自动跟随设置滚动。
+桌面端使用左侧固定导航，移动端折叠为顶部横向 Tab；五个页面为「启动 / 统计 / 对局记录 / 录像 / 日志」，默认启动页。统一浅色主题，主色为 `#008080`，控件使用 2–4px 小圆角。样式由 Tailwind CSS v4 与 [应用样式](../apps/web/src/styles/app.css) 中的设计令牌生成。日志页同样使用浅色面板，不混用深色区块。面板常驻挂载，使用 `hidden` 控制显示，切换不丢未保存的表单草稿，也不影响 SSE 或运行任务。对局详情使用原生 `<dialog>` modal，支持 Esc、遮罩点击关闭和焦点恢复。Tab 支持方向键、Home / End 与标准 ARIA 语义；日志页重新显示时按用户的自动跟随设置滚动。录像还可通过 `/replay` 独立打开，只加载本地文件或录像接口，不依赖控制台 SSE。
 
 ## 运行状态与并发
 
@@ -65,7 +72,7 @@ idle/stopped/failed → starting → queueing → playing → cooldown → queue
 
 同一个数据目录只允许一个服务实例，SQLite 连接持有独占锁，避免重复启动将另一实例的活动运行误判为中断。需要检查原始数据库时请先停止服务。
 
-仓储是 SQLite 的唯一访问点。`PRAGMA user_version` 管理初始 schema；将来改结构应增加明确迁移，不在各业务模块创建表。启动时将未完成运行标为失败、未完成对局标为中断，不自动启动 agent。
+仓储是 SQLite 的唯一访问点。`PRAGMA user_version` 管理 schema 版本（当前为 v2）；将来改结构应增加明确迁移，不在各业务模块创建表。启动时将未完成运行标为失败、未完成对局标为中断，不自动启动 agent。
 
 运行参数由独立 `ConfigStore` 保存到 `data/config.json`：可读的缩进 JSON、Zod 校验、临时文件写入后原子替换、默认 0600 权限。启动时读取，界面保存后同步更新缓存；手工编辑应在停止服务后进行，重启生效。数据库 v1 的 settings 首次启动迁移到 JSON，成功后升级 v2 并移除旧 settings 表；已有 JSON 优先，损坏文件不会被默认配置覆盖。运行历史中的配置仍是当时参数的快照。
 
@@ -83,7 +90,7 @@ GameState 从已有服务器事件生成独立 MatchSnapshot，不改变发给 a
 
 ## 扩展原则
 
-首版不引入插件总线、依赖注入容器或通用任务框架。新增功能时遵守现有边界：
+不引入插件总线、依赖注入容器或通用任务框架。新增功能时遵守现有边界：
 
 1. agent 格式变化放在 `agent/`，不要在 React 中解释 stdout。
 2. 服务器事件变化放在 `game/`，不要在控制器里手工拼 WebSocket 帧。
@@ -91,4 +98,4 @@ GameState 从已有服务器事件生成独立 MatchSnapshot，不改变发给 a
 4. 新的存储结构应增加迁移和重启测试；不要用浏览器 localStorage 替代历史来源。
 5. 固定输入只放测试目录并使用临时存储；产品只连接真实对局，不生成结果数据。
 
-不新增 WebSocket 测试是本次明确范围；新控制端的其他边界仍应保持自动化验证。
+自动化验证不连接真实游戏服务器、不自动开始联网对局；游戏事件使用内存替身。验证入口与环境隔离见[配置与验证](configuration.md)，尚未覆盖的传输层等风险见[技术债](technical-debt.md)。
