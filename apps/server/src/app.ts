@@ -107,7 +107,7 @@ export async function createApp(controller: Controller, webDir: string, port = 3
   });
 
   const hasWeb = existsSync(resolve(webDir, 'index.html'));
-  if (hasWeb) await app.register(fastifyStatic, { root: resolve(webDir), wildcard: false });
+  if (hasWeb) await app.register(fastifyStatic, { root: resolve(webDir) });
   app.setNotFoundHandler((request, reply) => {
     if (request.url.startsWith('/api/')) return reply.code(404).send({ message: '接口不存在' });
     if (hasWeb && (request.method === 'GET' || request.method === 'HEAD'))
