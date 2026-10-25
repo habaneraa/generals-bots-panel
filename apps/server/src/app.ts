@@ -4,20 +4,21 @@ import type { ServerResponse } from 'node:http';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z, ZodError } from 'zod';
+import { DEFAULT_API_PORT, DEV_WEB_PORT, LOOPBACK_HOST } from '../../../config/runtime.js';
 import { matchQuerySchema } from '../../../packages/contracts/src/index.js';
 import type { Controller } from './controller.js';
 import { HttpError } from './errors.js';
 import { replayAddressSchema } from './storage/replays.js';
 
-export async function createApp(controller: Controller, webDir: string, port = 3000) {
+export async function createApp(controller: Controller, webDir: string, port = DEFAULT_API_PORT) {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
   const streams = new Set<ServerResponse>();
-  const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+  const hosts = new Set([`${LOOPBACK_HOST}:${port}`, `localhost:${port}`]);
   const origins = new Set([
-    `http://127.0.0.1:${port}`,
+    `http://${LOOPBACK_HOST}:${port}`,
     `http://localhost:${port}`,
-    'http://127.0.0.1:5173',
-    'http://localhost:5173',
+    `http://${LOOPBACK_HOST}:${DEV_WEB_PORT}`,
+    `http://localhost:${DEV_WEB_PORT}`,
   ]);
   app.addHook('onRequest', async (request) => {
     if (!hosts.has(request.headers.host ?? '')) throw new HttpError(403, '仅允许本机地址访问');
@@ -128,9 +129,9 @@ export async function createApp(controller: Controller, webDir: string, port = 3
     if (request.url.startsWith('/api/')) return reply.code(404).send({ message: '接口不存在' });
     if (hasWeb && (request.method === 'GET' || request.method === 'HEAD'))
       return reply.sendFile('index.html');
-    return reply
-      .code(404)
-      .send({ message: '开发界面：http://127.0.0.1:5173；部署前请运行 npm run build' });
+    return reply.code(404).send({
+      message: `开发界面：http://${LOOPBACK_HOST}:${DEV_WEB_PORT}；部署前请运行 npm run build`,
+    });
   });
   app.addHook('preClose', async () => {
     for (const stream of streams) stream.end();

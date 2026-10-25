@@ -16,14 +16,14 @@ afterEach(async () => {
   }
 });
 
-async function setup() {
+async function setup(port?: number) {
   const dir = mkdtempSync(join(tmpdir(), 'panel-static-'));
   const webDir = join(dir, 'web');
   mkdirSync(webDir);
   writeFileSync(join(webDir, 'index.html'), '<html>panel shell</html>');
   const repository = new Repository(join(dir, 'data'));
   const controller = new Controller(repository, dir);
-  const app = await createApp(controller, webDir);
+  const app = await createApp(controller, webDir, port);
   resources.push({ app, repository, dir });
   await app.ready();
   return { app, webDir };
@@ -50,5 +50,40 @@ describe('built web assets', () => {
     const api = await app.inject({ url: '/api/missing', headers });
     expect(api.statusCode).toBe(404);
     expect(api.json()).toEqual({ message: '接口不存在' });
+  });
+});
+
+describe('自定义 API 端口的本机访问限制', () => {
+  it.each(['127.0.0.1', 'localhost'])('允许自定义端口的本机 Host 和 Origin：%s', async (host) => {
+    const { app } = await setup(4321);
+    const response = await app.inject({
+      url: '/api/health',
+      headers: { host: `${host}:4321`, origin: `http://${host}:4321` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+  });
+
+  it.each(['http://127.0.0.1:5173', 'http://localhost:5173'])(
+    '允许开发界面 Origin：%s',
+    async (origin) => {
+      const { app } = await setup(4321);
+      const response = await app.inject({
+        url: '/api/health',
+        headers: { host: '127.0.0.1:4321', origin },
+      });
+      expect(response.statusCode).toBe(200);
+    },
+  );
+
+  it.each<[string, string]>([
+    ['127.0.0.1:3000', 'http://127.0.0.1:4321'],
+    ['127.0.0.1:4321', 'http://localhost:3000'],
+    ['outside.invalid:4321', 'http://127.0.0.1:4321'],
+    ['127.0.0.1:4321', 'https://outside.invalid'],
+  ])('拒绝不匹配的 Host %s / Origin %s', async (host, origin) => {
+    const { app } = await setup(4321);
+    const response = await app.inject({ url: '/api/health', headers: { host, origin } });
+    expect(response.statusCode).toBe(403);
   });
 });

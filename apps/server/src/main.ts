@@ -1,13 +1,12 @@
 import { resolve } from 'node:path';
+import { DEFAULT_DATA_DIR, LOOPBACK_HOST, parseApiPort } from '../../../config/runtime.js';
 import { createApp } from './app.js';
 import { Controller } from './controller.js';
 import { Repository } from './storage/repository.js';
 
 const root = process.cwd();
-const port = Number(process.env.PORT ?? 3000);
-if (!Number.isInteger(port) || port < 1 || port > 65535)
-  throw new Error('PORT 必须为 1–65535 的整数');
-const repository = new Repository(resolve(root, process.env.DATA_DIR ?? 'data'));
+const port = parseApiPort(process.env.PORT);
+const repository = new Repository(resolve(root, process.env.DATA_DIR ?? DEFAULT_DATA_DIR));
 const controller = new Controller(repository, root);
 const app = await createApp(controller, resolve(root, 'dist/web'), port);
 let stopping = false;
@@ -32,8 +31,8 @@ process.once('SIGTERM', () => {
   });
 });
 try {
-  await app.listen({ host: '127.0.0.1', port });
-  console.log(`Generals Bots Panel: http://127.0.0.1:${port}`);
+  await app.listen({ host: LOOPBACK_HOST, port });
+  console.log(`Generals Bots Panel: http://${LOOPBACK_HOST}:${port}`);
   console.log(`本地数据：${repository.dataDir}`);
 } catch (error) {
   console.error(error);

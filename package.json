@@ -14,8 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "format": "prettier --write apps packages test docs README.md package.json tsconfig.json eslint.config.js .prettierrc.json",
-    "format:check": "prettier --check apps packages test docs README.md package.json tsconfig.json eslint.config.js .prettierrc.json",
+    "format": "prettier --write apps packages config test docs .github README.md package.json tsconfig.json vitest.config.ts eslint.config.js .prettierrc.json",
+    "format:check": "prettier --check apps packages config test docs .github README.md package.json tsconfig.json vitest.config.ts eslint.config.js .prettierrc.json",
     "check": "npm run typecheck && npm run lint && npm test && npm run format:check"
   },
   "dependencies": {
