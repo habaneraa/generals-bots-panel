@@ -14,6 +14,7 @@ export function useDashboard() {
   const [attempt, setAttempt] = useState(0);
   const actionLock = useRef(false);
   const mounted = useRef(true);
+  const eventGeneration = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
@@ -47,6 +48,7 @@ export function useDashboard() {
       try {
         const data = JSON.parse(event.data) as Dashboard;
         receivedEvent = true;
+        eventGeneration.current++;
         setDashboard(data);
         setLoadError(null);
         setConnection('connected');
@@ -78,18 +80,20 @@ export function useDashboard() {
     actionLock.current = true;
     setPending(action);
     setActionError(null);
+    const generation = eventGeneration.current;
     try {
       if (action === 'stop') {
         const data = await api.stop();
-        if (mounted.current) setDashboard(data);
+        if (mounted.current && eventGeneration.current === generation) setDashboard(data);
       } else {
         if (!config) throw new Error('缺少运行参数。');
         if (action === 'save') {
           const saved = await api.save(config);
-          if (mounted.current) setDashboard((current) => current && { ...current, config: saved });
+          if (mounted.current && eventGeneration.current === generation)
+            setDashboard((current) => current && { ...current, config: saved });
         } else {
           const data = await api.start(config);
-          if (mounted.current) setDashboard(data);
+          if (mounted.current && eventGeneration.current === generation) setDashboard(data);
         }
       }
       return true;
