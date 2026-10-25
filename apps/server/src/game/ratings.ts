@@ -1,5 +1,16 @@
+import { Agent } from 'undici';
+
 /** Public profile metadata only; never receives account credentials or controls a game. */
 const RETRY_DELAYS_MS = [250, 500];
+const REQUEST_TIMEOUT_MS = 8000;
+const ADDRESS_ATTEMPT_TIMEOUT_MS = 2000;
+// Isolate slow dual-stack connections from the game's WebSocket transport.
+const ratingDispatcher = new Agent({
+  connect: {
+    autoSelectFamily: true,
+    autoSelectFamilyAttemptTimeout: ADDRESS_ATTEMPT_TIMEOUT_MS,
+  },
+});
 
 function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -31,12 +42,16 @@ export async function fetchDuelStars(
 
   for (let attempt = 0; ; attempt += 1) {
     const started = performance.now();
-    debug?.(`request attempt=${attempt + 1} timeoutMs=2000`);
+    debug?.(
+      `request attempt=${attempt + 1} timeoutMs=${REQUEST_TIMEOUT_MS} addressAttemptMs=${ADDRESS_ATTEMPT_TIMEOUT_MS}`,
+    );
     try {
-      const response = await fetch(url, {
-        signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]),
+      const options = {
+        dispatcher: ratingDispatcher,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
         headers: { accept: 'application/json', 'user-agent': 'generals-bots-panel' },
-      });
+      };
+      const response = await fetch(url, options);
       debug?.(
         `response attempt=${attempt + 1} status=${response.status} elapsedMs=${Math.round(performance.now() - started)}`,
       );
@@ -83,8 +98,17 @@ export async function fetchDuelStars(
         ['TimeoutError', 'AbortError', 'TypeError', 'SyntaxError'].includes(error.name)
           ? error.name
           : 'Error';
+      const cause = error instanceof Error ? error.cause : null;
+      const code =
+        typeof cause === 'object' &&
+        cause !== null &&
+        'code' in cause &&
+        typeof cause.code === 'string' &&
+        /^[A-Z0-9_]{1,64}$/.test(cause.code)
+          ? cause.code
+          : 'unknown';
       debug?.(
-        `request failed attempt=${attempt + 1} reason=${reason} aborted=${signal.aborted} elapsedMs=${Math.round(performance.now() - started)}`,
+        `request failed attempt=${attempt + 1} reason=${reason} aborted=${signal.aborted} elapsedMs=${Math.round(performance.now() - started)} code=${code}`,
       );
       if (signal.aborted || attempt >= RETRY_DELAYS_MS.length) {
         debug?.(`result=null reason=${signal.aborted ? 'cancelled' : 'retries-exhausted'}`);

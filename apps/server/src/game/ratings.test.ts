@@ -1,3 +1,5 @@
+import { getDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
+import { Agent } from 'undici';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchDuelStars } from './ratings.js';
 
@@ -72,10 +74,36 @@ describe('public rating metadata without network', () => {
     expect(await fetchDuelStars('player', new AbortController().signal, debug)).toBe(
       83.876173960723037,
     );
-    expect(debug).toHaveBeenCalledWith('request attempt=1 timeoutMs=2000');
+    expect(debug).toHaveBeenCalledWith('request attempt=1 timeoutMs=8000 addressAttemptMs=2000');
     expect(debug).toHaveBeenCalledWith(expect.stringContaining('status=200 elapsedMs='));
     expect(debug).toHaveBeenCalledWith('parsed stars.duel type=string value="83.876173960723037"');
     expect(debug).toHaveBeenCalledWith(expect.stringContaining('reason=ok'));
+  });
+
+  it('uses an isolated dispatcher and an eight-second request budget without changing global connection settings', async () => {
+    const globalTimeout = getDefaultAutoSelectFamilyAttemptTimeout();
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const request = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(Response.json({ stars: { duel: '84.6' } }));
+    expect(await fetchDuelStars('player', new AbortController().signal)).toBe(84.6);
+    expect(request.mock.calls[0]?.[1]).toHaveProperty('dispatcher', expect.any(Agent));
+    expect(timeout).toHaveBeenCalledWith(8000);
+    expect(getDefaultAutoSelectFamilyAttemptTimeout()).toBe(globalTimeout);
+  });
+
+  it('reports connection error codes without leaking raw exception details', async () => {
+    const debug = vi.fn();
+    const controller = new AbortController();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      controller.abort();
+      throw new TypeError('private-account-id', {
+        cause: { code: 'ETIMEDOUT', message: 'private-account-id' },
+      });
+    });
+    expect(await fetchDuelStars('player', controller.signal, debug)).toBeNull();
+    expect(debug).toHaveBeenCalledWith(expect.stringContaining('code=ETIMEDOUT'));
+    expect(JSON.stringify(debug.mock.calls)).not.toContain('private-account-id');
   });
 
   it('reports successful zero ratings', async () => {
