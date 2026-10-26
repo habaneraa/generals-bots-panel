@@ -13,7 +13,14 @@ import {
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ReplayTimeline, type Replay } from '../../../../packages/contracts/src/replay';
 import { ReplayBoard } from './ReplayBoard';
-import { actionWindow, elapsed, frameForTurn, playerColors, statusNames } from './model';
+import {
+  actionWindow,
+  elapsed,
+  frameForTurn,
+  HISTORY_STEPS,
+  playerColors,
+  statusNames,
+} from './model';
 import sourceLicense from './assets/LICENSE.generals-bots?url';
 import fontLicense from './assets/OFL.txt?url';
 import './replay.css';
@@ -35,6 +42,7 @@ export function ReplayPlayer({
   const [zoom, setZoom] = useState(1);
   const [arrows, setArrows] = useState(true);
   const [history, setHistory] = useState(true);
+  const [hidePlayerIds, setHidePlayerIds] = useState(false);
   const [player, setPlayer] = useState<number | null>(null);
   const [targetTurn, setTargetTurn] = useState('');
   const playerRef = useRef<HTMLElement>(null);
@@ -133,6 +141,14 @@ export function ReplayPlayer({
               zoom={zoom}
             />
             <div className="replay-scoreboard">
+              <button
+                className="replay-scoreboard-toggle"
+                type="button"
+                aria-label={hidePlayerIds ? '显示玩家 ID' : '隐藏玩家 ID'}
+                aria-pressed={hidePlayerIds}
+                title={hidePlayerIds ? '点击显示玩家 ID' : '点击隐藏玩家 ID'}
+                onClick={() => setHidePlayerIds((value) => !value)}
+              />
               <table aria-label="玩家统计 · 当前帧">
                 <thead>
                   <tr>
@@ -154,9 +170,11 @@ export function ReplayPlayer({
                                 background: playerColors[entry.index % playerColors.length],
                               }}
                             />
-                            <span className="truncate" title={entry.username}>
-                              {entry.username}
-                            </span>
+                            {!hidePlayerIds && (
+                              <span className="truncate" title={entry.username}>
+                                {entry.username}
+                              </span>
+                            )}
                             {entry.index === replay.perspective && (
                               <span className="replay-self">己方</span>
                             )}
@@ -342,7 +360,7 @@ export function ReplayPlayer({
                 disabled={!arrows}
                 onChange={(event) => setHistory(event.target.checked)}
               />
-              历史操作淡化 <span className="text-faint">12 帧</span>
+              历史操作淡化 <span className="text-faint">{HISTORY_STEPS} 步</span>
             </label>
             <label className="!flex-col !items-start gap-1">
               操作玩家
@@ -366,7 +384,7 @@ export function ReplayPlayer({
           <div className="replay-actions">
             {recent.length ? (
               recent
-                .slice(-8)
+                .slice(-HISTORY_STEPS)
                 .reverse()
                 .map((action, position) => (
                   <button
@@ -426,8 +444,8 @@ export function ReplayPlayer({
           <section>
             <h3>操作箭头</h3>
             <p>
-              黄色实线为已提交操作，虚线表示半兵或未提交决策。历史操作在 12
-              帧内逐渐淡化。提交不等于服务器执行；敌方操作不可得，不推测补画。
+              黄色实线为已提交操作，虚线表示半兵或未提交决策。轨迹仅保留最近 {HISTORY_STEPS}
+              步操作，历史操作逐步淡化。提交不等于服务器执行；敌方操作不可得，不推测补画。
             </p>
           </section>
           <section>

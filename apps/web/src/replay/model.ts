@@ -34,6 +34,8 @@ export function frameForTurn(replay: Replay, turn: number): number {
   return low;
 }
 
+export const HISTORY_STEPS = 10;
+
 export function actionWindow(
   actions: readonly ReplayAction[],
   frame: number,
@@ -49,9 +51,10 @@ export function actionWindow(
     else high = middle;
   }
   const result: ReplayAction[] = [];
-  for (let index = low - 1; index >= Math.max(0, low - 64); index--) {
+  const limit = history ? HISTORY_STEPS : 64;
+  for (let index = low - 1; index >= 0 && result.length < limit; index--) {
     const action = actions[index]!;
-    if (action.frame < frame - (history ? 12 : 0)) break;
+    if (!history && action.frame < frame) break;
     if (player === null || action.player === player) result.push(action);
   }
   return result.reverse();

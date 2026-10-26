@@ -66,7 +66,7 @@ describe('replay navigation helpers', () => {
     expect(actionWindow(actions, 1, false, null)).toEqual([]);
     expect(actionWindow(actions, 2, false, 0)).toEqual([actions[1]]);
     expect(actionWindow(actions, 2, true, 1)).toEqual([]);
-    expect(actionWindow(actions, 15, true, null)).toEqual([]);
+    expect(actionWindow(actions, 15, true, null)).toEqual(actions);
   });
   it('bounds operation drawing work even when called with unvalidated duplicate actions', () => {
     const action = sample().actions[0]!;
@@ -77,7 +77,22 @@ describe('replay navigation helpers', () => {
         true,
         null,
       ),
-    ).toHaveLength(64);
+    ).toHaveLength(10);
+  });
+  it('retains the latest ten operations across frame gaps and applies the player filter first', () => {
+    const actions = Array.from({ length: 30 }, (_, index) => ({
+      ...sample().actions[0]!,
+      frame: index * 20,
+      turn: index * 20,
+      player: index % 2,
+    }));
+    expect(actionWindow(actions, 1000, true, null)).toEqual(actions.slice(-10));
+    expect(actionWindow(actions, 1000, true, 0)).toEqual(
+      actions.filter((action) => action.player === 0).slice(-10),
+    );
+    expect(actionWindow(actions, 200, true, null)).toEqual(actions.slice(1, 11));
+    expect(actionWindow(actions, 201, false, null)).toEqual([]);
+    expect(actionWindow(actions, 200, false, null)).toEqual([actions[10]]);
   });
   it('parses deep links safely and formats elapsed time', () => {
     expect(replaySource('#replay=bots/game_1')).toEqual({ server: 'bots', gameId: 'game_1' });
@@ -239,6 +254,53 @@ describe('ReplayPlayer interaction', () => {
     expect(controls.querySelector('[aria-label="播放速度"]')).not.toBeNull();
     click('前进一帧');
     expect(scores.querySelector('tbody td')?.textContent).toBe('2');
+  });
+  it('toggles only scoreboard IDs by click or keyboard while keeping live scores and markers', () => {
+    render();
+    const scoreboard = container.querySelector<HTMLElement>('.replay-scoreboard')!;
+    const headers = () =>
+      [...scoreboard.querySelectorAll('thead th')].map((cell) => cell.textContent);
+    const colors = () =>
+      [...scoreboard.querySelectorAll<HTMLElement>('.replay-player-dot')].map(
+        (dot) => dot.style.background,
+      );
+    const initialColors = colors();
+    const initialScores = [...scoreboard.querySelectorAll('td')].map((cell) => cell.textContent);
+    expect(scoreboard.querySelectorAll('[title="self"], [title="enemy"]')).toHaveLength(2);
+    const toggle = scoreboard.querySelector<HTMLButtonElement>('.replay-scoreboard-toggle')!;
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(scoreboard.querySelector('table')!.closest('button')).toBeNull();
+    act(() => toggle.click());
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(toggle.getAttribute('aria-label')).toBe('显示玩家 ID');
+    expect(scoreboard.querySelector('.truncate')).toBeNull();
+    expect(scoreboard.querySelector('.replay-self')?.textContent).toBe('己方');
+    expect(colors()).toEqual(initialColors);
+    expect(headers()).toEqual(['玩家', '兵力', '领地']);
+    expect([...scoreboard.querySelectorAll('td')].map((cell) => cell.textContent)).toEqual(
+      initialScores,
+    );
+    expect(container.querySelector('.replay-options select')?.textContent).toContain('self');
+    click('前进一帧');
+    expect(scoreboard.querySelector('td')?.textContent).toBe('2');
+    expect(scoreboard.querySelector('.truncate')).toBeNull();
+    act(() => toggle.click());
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(scoreboard.querySelectorAll('[title="self"], [title="enemy"]')).toHaveLength(2);
+    for (const key of [' ', 'Enter']) {
+      act(() => toggle.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })));
+    }
+    act(() => vi.advanceTimersByTime(1000));
+    expect(frameIndex()).toBe(1);
+    expect(container.querySelector('[aria-label="暂停录像"]')).toBeNull();
+  });
+  it('shows only the latest ten actions in the history list', () => {
+    const replay = sample();
+    replay.actions = Array.from({ length: 14 }, () => ({ ...replay.actions[1]! }));
+    render(replay);
+    click('跳到末帧');
+    expect(container.querySelectorAll('.replay-action')).toHaveLength(10);
+    expect(container.querySelector('.replay-options')?.textContent).toContain('10 步');
   });
   it('steps both ways, clamps at boundaries, and jumps to endpoints', () => {
     render();

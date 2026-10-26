@@ -134,7 +134,7 @@ export function ReplayBoard({
       }
     }
     // Paint oldest first: the current operation stays legible over its faded history.
-    for (const action of actions) {
+    for (const [position, action] of actions.entries()) {
       const sx = ((action.from % replay.width) + 0.5) * CELL;
       const sy = (Math.floor(action.from / replay.width) + 0.5) * CELL;
       const tx = ((action.to % replay.width) + 0.5) * CELL;
@@ -147,7 +147,8 @@ export function ReplayBoard({
       const uy = dy / length;
       const endX = tx - ux * 7;
       const endY = ty - uy * 7;
-      ctx.globalAlpha = Math.max(0.12, 1 - (frame - action.frame) / 13);
+      ctx.globalAlpha =
+        action.frame === frame ? 1 : Math.max(0.08, (0.4 * (position + 1)) / actions.length);
       ctx.strokeStyle = action.status === 'sent' ? '#ffef64' : '#f8fafc';
       ctx.lineWidth = action.frame === frame ? 4 : 2.5;
       ctx.lineCap = 'round';
