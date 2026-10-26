@@ -17,7 +17,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         if (typeof error.message === 'string') message = error.message;
       }
     } catch {
-      // A proxy or disconnected server may return a non-JSON error page.
+      // 代理或断开的服务可能返回 HTML，保留 HTTP 状态才能继续定位故障。
     }
     throw new Error(message);
   }
