@@ -41,6 +41,7 @@ PORT=3100 DATA_DIR=/绝对路径/panel-data npm start
 ## 测试隔离与验证入口
 
 - [Vitest 配置](../vitest.config.ts)统一测试发现、超时与 mock 恢复。测试覆盖应用、共享契约和纯运行配置，不加载真实游戏入口。
+- [ESLint 规则](../eslint.config.js)保护静态依赖方向：浏览器产品源码不能导入服务端或 Node 内置模块，共享契约不能导入应用、本机配置或 Node 内置模块，游戏层不能导入存储层。[边界回归测试](../config/import-boundaries.test.ts)同时验证禁止和允许的导入；前端和契约测试仍可使用 Node 夹具，Vite 构建配置也可使用 Node API。
 - 存储与 HTTP 测试显式创建临时目录及临时数据库；配置测试直接传入字符串，不依赖开发者本机 `PORT` 或 `DATA_DIR`。
 - 游戏事件使用内存替身，外部 agent 使用[测试夹具](../test/fixtures/pass-agent.mjs)及 Node 子进程；不会读取真实账号或自动发起联网对局。
 - 前端交互测试按需使用 Happy DOM，不增加另一套生产配置。
