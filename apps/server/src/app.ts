@@ -5,7 +5,7 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z, ZodError } from 'zod';
 import { DEFAULT_API_PORT, DEV_WEB_PORT, LOOPBACK_HOST } from '../../../config/runtime.js';
-import { matchQuerySchema } from '../../../packages/contracts/src/index.js';
+import { matchFiltersSchema, matchQuerySchema } from '../../../packages/contracts/src/index.js';
 import type { Controller } from './controller.js';
 import { HttpError } from './errors.js';
 import { replayAddressSchema } from './storage/replays.js';
@@ -58,6 +58,9 @@ export async function createApp(controller: Controller, webDir: string, port = D
     const { page, pageSize, ...filters } = matchQuerySchema.parse(request.query);
     return controller.repository.matches(page, pageSize, filters);
   });
+  app.get('/api/matches/star-history', async (request) =>
+    controller.repository.starHistory(matchFiltersSchema.parse(request.query)),
+  );
   app.get('/api/replays/:server/:gameId', async (request) => {
     const { server, gameId } = replayAddressSchema.parse(request.params);
     const replay = await controller.replays.load(server, gameId);

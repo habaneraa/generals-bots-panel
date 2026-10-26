@@ -9,6 +9,8 @@ import {
   type MatchRecord,
   type RunConfig,
   type RunRecord,
+  type StarHistoryItem,
+  type StarHistoryResponse,
   type Stats,
 } from '../../../../packages/contracts/src/index.js';
 
@@ -108,7 +110,7 @@ export class Repository {
       );
   }
 
-  matches(page = 1, pageSize = 20, filters: MatchFilters = {}): MatchPage {
+  private matchWhere(filters: MatchFilters) {
     const conditions = ["mode = 'live'"];
     const params: (string | number)[] = [];
     if (filters.server !== undefined) {
@@ -143,7 +145,11 @@ export class Repository {
       conditions.push("json_extract(payload, '$.turns') <= ?");
       params.push(filters.maxTurns);
     }
-    const where = ` WHERE ${conditions.join(' AND ')}`;
+    return { where: ` WHERE ${conditions.join(' AND ')}`, params };
+  }
+
+  matches(page = 1, pageSize = 20, filters: MatchFilters = {}): MatchPage {
+    const { where, params } = this.matchWhere(filters);
     const rows = this.db
       .prepare(
         `SELECT payload FROM matches${where} ORDER BY started_at DESC, rowid DESC LIMIT ? OFFSET ?`,
@@ -157,6 +163,40 @@ export class Repository {
       total,
       page,
       pageSize,
+    };
+  }
+
+  starHistory(filters: MatchFilters = {}): StarHistoryResponse {
+    const { where, params } = this.matchWhere(filters);
+    const rows = this.db
+      .prepare(
+        `SELECT id, run_id, started_at,
+          json_extract(payload, '$.server') AS server,
+          json_extract(payload, '$.gameId') AS game_id,
+          json_extract(payload, '$.endedAt') AS ended_at,
+          CASE WHEN json_type(payload, '$.rating') = 'object' THEN json_object(
+            'username', json_extract(payload, '$.rating.username'),
+            'before', json_extract(payload, '$.rating.before'),
+            'after', json_extract(payload, '$.rating.after'),
+            'source', json_extract(payload, '$.rating.source'),
+            'capturedAt', json_extract(payload, '$.rating.capturedAt'),
+            'delta', json_extract(payload, '$.rating.delta')
+          ) END AS rating
+        FROM matches${where} ORDER BY started_at ASC, rowid ASC`,
+      )
+      .all(...params);
+    return {
+      items: rows.map((row) => ({
+        id: String(row.id),
+        runId: String(row.run_id),
+        server: row.server as StarHistoryItem['server'],
+        gameId: String(row.game_id),
+        startedAt: String(row.started_at),
+        endedAt: row.ended_at === null ? null : String(row.ended_at),
+        ...(row.rating === null
+          ? {}
+          : { rating: JSON.parse(String(row.rating)) as StarHistoryItem['rating'] }),
+      })),
     };
   }
 

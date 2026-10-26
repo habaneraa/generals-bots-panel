@@ -106,6 +106,13 @@ export interface MatchRecord {
   details?: MatchDetails;
   rating?: MatchRating;
 }
+export type StarHistoryItem = Pick<
+  MatchRecord,
+  'id' | 'runId' | 'server' | 'gameId' | 'startedAt' | 'endedAt' | 'rating'
+>;
+export interface StarHistoryResponse {
+  items: StarHistoryItem[];
+}
 export interface RunRecord {
   id: string;
   startedAt: string;
