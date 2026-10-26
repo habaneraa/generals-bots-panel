@@ -44,11 +44,18 @@ PORT=3100 DATA_DIR=/绝对路径/panel-data npm start
 - 存储与 HTTP 测试显式创建临时目录及临时数据库；配置测试直接传入字符串，不依赖开发者本机 `PORT` 或 `DATA_DIR`。
 - 游戏事件使用内存替身，外部 agent 使用[测试夹具](../test/fixtures/pass-agent.mjs)及 Node 子进程；不会读取真实账号或自动发起联网对局。
 - 前端交互测试按需使用 Happy DOM，不增加另一套生产配置。
-- [CI](../.github/workflows/ci.yml)使用 Node.js 24、`npm ci`、完整检查和生产构建；[锁文件](../package-lock.json)固定实际安装版本与完整性。本轮验证使用本机已安装依赖，不等同于验证所有镜像的可用性。
+- [CI](../.github/workflows/ci.yml)使用 Node.js 24、`npm ci`、完整检查和生产构建；[锁文件](../package-lock.json)固定实际安装版本与完整性。仅使用已安装依赖通过检查，不等同于验证干净安装或所有镜像的可用性。
+- [旧 Python 目录](../browser_agent/README.md)不属于当前测试入口；不要把其 `unittest discover` 当作本项目验证命令。旧入口测试仍调用现已改为面板启动器的根脚本，可能误启动服务或访问默认数据目录。
 
 ```bash
 npm run check
 npm run build
 ```
 
-完整检查包括类型、Lint、单元/集成测试和格式检查。测试只验证已声明的边界，不代表真实游戏服务器兼容性或跨平台进程清理已经完成实机验证；尚未覆盖的风险见[技术债](technical-debt.md)。
+`npm run check` 依次运行 `typecheck`、`lint`、`test`、`format:check`，任一步失败便停止；这些脚本也可独立执行。`npm run build` 先做类型检查，再构建前后端，不启动服务。仅核对 Star 历史回归时可运行：
+
+```bash
+npm test -- apps/server/src/storage/star-history.test.ts apps/web/src/hooks/useStarHistory.test.ts apps/web/src/components/StarHistoryChart apps/web/src/components/MatchHistory.interaction.test.ts
+```
+
+测试只验证已声明的边界，不代表真实游戏服务器兼容性或跨平台进程清理已经完成实机验证；尚未覆盖的风险见[技术债](technical-debt.md)。
