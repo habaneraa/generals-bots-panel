@@ -5,7 +5,8 @@ import cityUrl from './assets/citie.png';
 import mountainUrl from './assets/mountainie.png';
 import { playerColors } from './model';
 
-const CELL = 40;
+const CELL = 40; // Drawing coordinates; icons and text scale together with the board.
+const DEFAULT_TILE_PX = 32;
 
 export function ReplayBoard({
   replay,
@@ -59,7 +60,7 @@ export function ReplayBoard({
     return () => observer.disconnect();
   }, []);
 
-  const scale = Math.min(1, available / (replay.width * CELL)) * zoom;
+  const scale = Math.min(DEFAULT_TILE_PX / CELL, available / (replay.width * CELL)) * zoom;
   const width = replay.width * CELL * scale;
   const height = replay.height * CELL * scale;
 

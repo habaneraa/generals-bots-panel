@@ -138,6 +138,43 @@ function frameIndex() {
 }
 
 describe('ReplayPlayer interaction', () => {
+  it('defaults to 32px tiles and restores that size after manual zooming', () => {
+    render();
+    const canvas = container.querySelector('canvas')!;
+    expect(canvas.style.width).toBe('96px');
+    expect(canvas.style.height).toBe('64px');
+    click('缩小地图');
+    expect(canvas.style.width).toBe('72px');
+    click('放大地图');
+    click('放大地图');
+    expect(canvas.style.width).toBe('120px');
+    const fit = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === '适应宽度',
+    )!;
+    act(() => fit.click());
+    expect(canvas.style.width).toBe('96px');
+    expect(canvas.style.height).toBe('64px');
+  });
+  it('still fits the board into containers narrower than the default tile size allows', () => {
+    const callbacks: ResizeObserverCallback[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          callbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    render();
+    act(() =>
+      callbacks[0]!([{ contentRect: { width: 60 } } as ResizeObserverEntry], {} as ResizeObserver),
+    );
+    const canvas = container.querySelector('canvas')!;
+    expect(canvas.style.width).toBe('60px');
+    expect(canvas.style.height).toBe('40px');
+  });
   it('steps both ways, clamps at boundaries, and jumps to endpoints', () => {
     render();
     expect(frameIndex()).toBe(0);
