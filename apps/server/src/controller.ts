@@ -43,7 +43,14 @@ export class Controller {
       const userId = (await readFile(resolve(root, config.userIdFile), 'utf8')).trim();
       if (!userId || userId.length > 4096) throw new Error('账号文件为空或长度非法');
       return new SocketGame(config.server, userId, undefined, (message) =>
-        this.writeLog(message.startsWith('本地录像') ? 'warn' : 'debug', message),
+        this.writeLog(
+          message.startsWith('本地录像')
+            ? 'warn'
+            : message.startsWith('自动投降：')
+              ? 'info'
+              : 'debug',
+          message,
+        ),
       );
     },
   ) {

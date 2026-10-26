@@ -33,6 +33,7 @@ export class SocketGame implements GameConnection {
   private botApi = false;
   private attackIndex = 0;
   private pendingIndex = 0;
+  private surrenderRequested = false;
   private gameIdentity: string | null = null;
   private gameId: string | null = null;
   private ratingsGameId: string | null = null;
@@ -65,6 +66,18 @@ export class SocketGame implements GameConnection {
                   this.recorder.capture(frame);
                 } catch {
                   this.recorder.truncate('本地录像采集失败，已保留有效前缀');
+                }
+                const view = frame.observation;
+                if (
+                  !this.closed &&
+                  !this.surrenderRequested &&
+                  (view.my_army * 100 < view.opp_army || view.my_land * 100 < view.opp_land)
+                ) {
+                  this.surrenderRequested = true;
+                  this.socket.emit('surrender');
+                  this.log?.(
+                    `自动投降：兵力 ${view.my_army}/${view.opp_army}，领地 ${view.my_land}/${view.opp_land}，低于敌方的 1%`,
+                  );
                 }
               }
             }
@@ -104,6 +117,7 @@ export class SocketGame implements GameConnection {
     this.state.reset();
     this.recorder = new ReplayRecorder(this.server, this.log);
     this.attackIndex = this.pendingIndex = 0;
+    this.surrenderRequested = false;
     this.gameIdentity = this.gameId = null;
     this.socket.emit('leave_game');
     if (this.botApi) {
@@ -173,7 +187,7 @@ export class SocketGame implements GameConnection {
     ) {
       return 'stale';
     }
-    if (current.attackIndex < this.pendingIndex) return 'rejected';
+    if (this.surrenderRequested || current.attackIndex < this.pendingIndex) return 'rejected';
     if (typeof action.pass !== 'boolean') return 'rejected';
     if (action.pass) return 'pass';
     const { row, col, direction, split } = action;
