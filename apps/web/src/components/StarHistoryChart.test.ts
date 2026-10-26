@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
 import { MatchHistoryRow } from './MatchHistoryRow';
 import { StarChange } from './StarChange';
-import { groupStarHistory, StarHistoryChart, starHistoryOption } from './StarHistoryChart';
+import { groupStarHistory, StarHistoryChart } from './StarHistoryChart';
 
 function match(overrides: Partial<MatchRecord> = {}): MatchRecord {
   return {
@@ -105,31 +105,20 @@ describe('StarHistoryChart', () => {
     expect(groups.size).toBe(3);
   });
 
-  it('does not bridge missing measurements or invent a zero', () => {
-    const pending = match();
-    pending.rating = { ...pending.rating!, after: null, delta: null };
-    const option = starHistoryOption([pending, match()]);
-    const series = option.series as {
-      data: unknown;
-      connectNulls: boolean;
-      lineStyle: { color: string };
-    }[];
-    expect(series[0]?.data).toEqual([
-      [0, 12],
-      [1, null],
-    ]);
-    expect(series[0]?.connectNulls).toBe(false);
-    expect(series[1]?.data).toEqual([
-      [1, 12],
-      [2, 13.5],
-    ]);
-    expect(series[1]?.lineStyle.color).toBe('#15803d');
+  it('keeps the single-account chart free of metric cards and decorative labels', () => {
+    const html = renderToStaticMarkup(createElement(StarHistoryChart, { matches: [match()] }));
+    expect(html).toContain('Star 历史');
+    expect(html).not.toContain('最近赛后');
+    expect(html).not.toContain('当前页');
+    expect(html).not.toContain('绿涨');
+    expect(html).not.toContain('场有评分记录');
+    expect(html).not.toContain('shadow');
   });
 
-  it('labels its page scope and missing-data state', () => {
+  it('shows only the necessary empty state when no usable observations exist', () => {
     const html = renderToStaticMarkup(createElement(StarHistoryChart, { matches: [] }));
-    expect(html).toContain('当前页');
-    expect(html).toContain('暂无 Star 记录');
-    expect(html).toContain('结算延迟');
+    expect(html).toContain('暂无可用的赛后 Star 记录');
+    expect(html).not.toContain('当前页');
+    expect(html).not.toContain('结算延迟');
   });
 });

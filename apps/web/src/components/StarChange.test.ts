@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
 import { formatStars, StarChange, starChangePresentation } from './StarChange';
-import { StarHistoryChart, starHistoryOption } from './StarHistoryChart';
 
 function match(rating: MatchRecord['rating']): MatchRecord {
   return {
@@ -69,29 +68,6 @@ describe('Star display precision', () => {
     expect(unknown).toContain('—');
     expect(unknown).toContain('缺赛后值');
     expect(renderChange(undefined)).toContain('未记录');
-  });
-
-  it('formats axis labels, tooltips and latest stars without rounding chart data', () => {
-    const record = match(rating);
-    const option = starHistoryOption([record]);
-    const axis = option.yAxis as {
-      minInterval: number;
-      axisLabel: { formatter: (value: number) => string };
-    };
-    expect(axis.minInterval).toBe(0.1);
-    expect(axis.axisLabel.formatter(12)).toBe('12.0');
-    expect(axis.axisLabel.formatter(-0.04)).toBe('0.0');
-    const series = option.series as {
-      data: unknown;
-      tooltip: { formatter: () => string };
-    }[];
-    expect(series[0]?.data).toEqual([
-      [0, 1234.56],
-      [1, 1235.789],
-    ]);
-    expect(series[0]?.tooltip.formatter()).toContain('赛前 1,234.6\n赛后 1,235.8\nStar 变化 +1.2');
-    const html = renderToStaticMarkup(createElement(StarHistoryChart, { matches: [record] }));
-    expect(html).toContain('最近赛后 1,235.8 ★');
   });
 });
 

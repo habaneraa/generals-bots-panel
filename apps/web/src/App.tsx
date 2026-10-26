@@ -198,7 +198,34 @@ function DashboardApp() {
                 tabIndex={0}
                 hidden={activeTab !== 'history'}
               >
-                <MatchHistory refreshKey={JSON.stringify(dashboard.matches)} />
+                <MatchHistory
+                  refreshKey={JSON.stringify(dashboard.matches)}
+                  starHistoryRefreshKey={JSON.stringify(
+                    dashboard.matches.map(
+                      ({
+                        id,
+                        runId,
+                        server,
+                        gameId,
+                        startedAt,
+                        endedAt,
+                        opponent,
+                        outcome,
+                        rating,
+                      }) => ({
+                        id,
+                        runId,
+                        server,
+                        gameId,
+                        startedAt,
+                        endedAt,
+                        opponent,
+                        outcome,
+                        rating,
+                      }),
+                    ),
+                  )}
+                />
               </div>
               <div
                 id="panel-replay"

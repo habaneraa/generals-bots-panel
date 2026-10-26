@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, History, Inbox } from 'lucide-react';
 import { useState } from 'react';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
 import { useMatchHistory } from '../hooks/useMatchHistory';
+import { useStarHistory } from '../hooks/useStarHistory';
 import { HistoryFilters } from './HistoryFilters';
 import { MatchDetailsModal } from './MatchDetailsModal';
 import { MatchHistoryRow } from './MatchHistoryRow';
@@ -10,11 +11,13 @@ import { EmptyState, Notice, Spinner } from './Shared';
 
 type Props = {
   refreshKey: string;
+  starHistoryRefreshKey: string;
 };
 
-export function MatchHistory({ refreshKey }: Props) {
+export function MatchHistory({ refreshKey, starHistoryRefreshKey }: Props) {
   const { data, filters, page, loading, error, applyFilters, setPage, retry } =
     useMatchHistory(refreshKey);
+  const starHistory = useStarHistory(filters, starHistoryRefreshKey);
   const [selected, setSelected] = useState<MatchRecord | null>(null);
   const hasFilters = Object.values(filters).some((value) => value !== undefined);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / (data?.pageSize ?? 20)));
@@ -43,7 +46,25 @@ export function MatchHistory({ refreshKey }: Props) {
 
       <HistoryFilters onApply={applyFilters} />
 
-      {data && <StarHistoryChart matches={data.items} />}
+      {starHistory.data && <StarHistoryChart matches={starHistory.data.items} />}
+      {!starHistory.data && starHistory.loading && (
+        <div className="flex items-center gap-2 px-4 py-3 text-[11px] text-muted" role="status">
+          <Spinner /> 正在读取 Star 历史…
+        </div>
+      )}
+      {starHistory.error && (
+        <div className="px-4 py-2.5">
+          <Notice
+            action={
+              <button className="btn btn-danger btn-sm" type="button" onClick={starHistory.retry}>
+                重试 Star 历史
+              </button>
+            }
+          >
+            Star 历史读取失败：{starHistory.error}
+          </Notice>
+        </div>
+      )}
 
       {error && (
         <div className="px-4 py-2.5">

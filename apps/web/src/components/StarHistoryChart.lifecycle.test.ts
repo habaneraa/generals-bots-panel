@@ -8,6 +8,8 @@ import { StarHistoryChart } from './StarHistoryChart';
 const engine = vi.hoisted(() => ({
   init: vi.fn(),
   setOption: vi.fn(),
+  getOption: vi.fn(),
+  dispatchAction: vi.fn(),
   resize: vi.fn(),
   dispose: vi.fn(),
 }));
@@ -44,6 +46,7 @@ const disconnect = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
   engine.init.mockReturnValue(engine);
+  engine.getOption.mockReturnValue({ dataZoom: [{ start: 0, end: 100 }] });
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal(
     'ResizeObserver',
@@ -129,7 +132,7 @@ describe('StarHistoryChart lifecycle', () => {
     expect(disconnect).not.toHaveBeenCalled();
   });
 
-  it('updates actual ratings on the existing instance and replaces removed series', async () => {
+  it('updates actual ratings on the existing instance without retaining deleted observations', async () => {
     const element = await renderChart();
     makeVisible(element);
     await act(async () => {
@@ -148,12 +151,57 @@ describe('StarHistoryChart lifecycle', () => {
     expect(engine.init).toHaveBeenCalledOnce();
     expect(engine.dispose).not.toHaveBeenCalled();
     expect(engine.setOption).toHaveBeenCalledTimes(3);
-    expect(engine.setOption.mock.lastCall?.[0].series).toHaveLength(1);
-    expect(engine.setOption.mock.lastCall?.[0].series[0].data).toEqual([
-      [0, 10],
-      [1, 12],
+    expect(engine.setOption.mock.lastCall?.[0].series).toHaveLength(2);
+    expect(engine.setOption.mock.lastCall?.[0].series[0].data).toHaveLength(2);
+    expect(
+      engine.setOption.mock.lastCall?.[0].series[0].data.map(
+        (point: { value: unknown }) => point.value,
+      ),
+    ).toEqual([
+      [Date.parse(matches[0]!.startedAt), 10],
+      [Date.parse(matches[0]!.endedAt!), 12],
     ]);
     expect(engine.setOption.mock.lastCall?.[1]).toEqual({ notMerge: true });
+  });
+
+  it('preserves the chosen time window without changing restore defaults', async () => {
+    const element = await renderChart();
+    makeVisible(element);
+    await act(async () => {
+      resize();
+      await vi.dynamicImportSettled();
+    });
+    const startValue = Date.parse('2026-10-25T06:01:00Z');
+    const endValue = Date.parse('2026-10-25T06:03:00Z');
+    engine.getOption.mockReturnValueOnce({
+      dataZoom: [{ start: 20, end: 60, startValue, endValue }],
+    });
+    const updated = { ...matches[0]!, rating: { ...matches[0]!.rating!, after: 12, delta: 2 } };
+    await act(async () => root.render(createElement(StarHistoryChart, { matches: [updated] })));
+    expect(engine.init).toHaveBeenCalledOnce();
+    expect(engine.setOption.mock.lastCall?.[0].dataZoom).toEqual([
+      expect.objectContaining({ start: 0, end: 100 }),
+      expect.objectContaining({ start: 0, end: 100 }),
+    ]);
+    expect(engine.dispatchAction).toHaveBeenCalledWith(
+      { type: 'dataZoom', startValue, endValue },
+      { silent: true },
+    );
+  });
+
+  it('keeps following the full history when the user has not zoomed in', async () => {
+    const element = await renderChart();
+    makeVisible(element);
+    await act(async () => {
+      resize();
+      await vi.dynamicImportSettled();
+    });
+    const updated = { ...matches[0]!, endedAt: '2026-10-25T06:10:00Z' };
+    await act(async () => root.render(createElement(StarHistoryChart, { matches: [updated] })));
+    expect(engine.setOption.mock.lastCall?.[0].dataZoom).toEqual([
+      expect.objectContaining({ start: 0, end: 100 }),
+      expect.objectContaining({ start: 0, end: 100 }),
+    ]);
   });
 
   it('uses the newest ratings if history changes during the engine import', async () => {
@@ -167,9 +215,13 @@ describe('StarHistoryChart lifecycle', () => {
     await act(async () => vi.dynamicImportSettled());
     expect(engine.init).toHaveBeenCalledOnce();
     expect(engine.setOption).toHaveBeenCalledOnce();
-    expect(engine.setOption.mock.lastCall?.[0].series[0].data).toEqual([
-      [0, 10],
-      [1, 12],
+    expect(
+      engine.setOption.mock.lastCall?.[0].series[0].data.map(
+        (point: { value: unknown }) => point.value,
+      ),
+    ).toEqual([
+      [Date.parse(matches[0]!.startedAt), 10],
+      [Date.parse(matches[0]!.endedAt!), 12],
     ]);
     expect(disconnect).not.toHaveBeenCalled();
   });

@@ -4,6 +4,7 @@ import type {
   MatchFilters,
   MatchPage,
   RunConfig,
+  StarHistoryResponse,
 } from '../../../../packages/contracts/src/index';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -43,6 +44,13 @@ export const api = {
       if (value !== undefined) query.set(key, String(value));
     }
     return request(`/api/matches?${query}`, { signal });
+  },
+  starHistory: (filters: MatchFilters, signal: AbortSignal): Promise<StarHistoryResponse> => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined) query.set(key, String(value));
+    }
+    return request(`/api/matches/star-history?${query}`, { signal });
   },
   save: (config: RunConfig): Promise<RunConfig> => mutation('/api/config', 'PUT', config),
   start: (config: RunConfig): Promise<Dashboard> => mutation('/api/runs', 'POST', config),

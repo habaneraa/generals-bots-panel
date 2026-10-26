@@ -1,99 +1,256 @@
+import type { TooltipComponentOption } from 'echarts/components';
 import type { EChartsCoreOption, EChartsType } from 'echarts/core';
-import { TrendingUp } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { MatchRecord } from '../../../../packages/contracts/src/index';
+import type { StarHistoryItem } from '../../../../packages/contracts/src/index';
 import { formatDateTime } from '../lib/format';
-import { formatStars, starChangePresentation, starChangeTone } from './StarChange';
+import { formatStars } from './StarChange';
 
-export function groupStarHistory(matches: MatchRecord[]): Map<string, MatchRecord[]> {
-  const groups = new Map<string, MatchRecord[]>();
+type PlotPoint = {
+  value: [number, number | null];
+  record?: StarHistoryItem;
+  source?: NonNullable<StarHistoryItem['rating']>['source'];
+  symbolSize?: number;
+};
+
+function observationTime(match: StarHistoryItem): number {
+  return Date.parse(match.endedAt ?? match.startedAt);
+}
+
+export function groupStarHistory(matches: StarHistoryItem[]): Map<string, StarHistoryItem[]> {
+  const accounts = new Map<string, Set<string>>();
+  for (const match of matches) {
+    if (match.rating?.username == null) continue;
+    const run = JSON.stringify([match.server, match.runId]);
+    const names = accounts.get(run) ?? new Set<string>();
+    names.add(match.rating.username);
+    accounts.set(run, names);
+  }
+  const groups = new Map<string, StarHistoryItem[]>();
   const ordered = [...matches].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
   for (const match of ordered) {
-    if (!match.rating || (match.rating.before === null && match.rating.after === null)) continue;
-    const key = JSON.stringify([match.server, match.rating.username ?? match.runId]);
+    const names = accounts.get(JSON.stringify([match.server, match.runId]));
+    const username = match.rating?.username ?? (names?.size === 1 ? [...names][0] : null);
+    const key = JSON.stringify([match.server, username ?? match.runId]);
     const group = groups.get(key) ?? [];
     group.push(match);
     groups.set(key, group);
   }
+  for (const [key, items] of groups) {
+    if (!items.some((match) => match.rating?.after != null)) groups.delete(key);
+  }
   return groups;
 }
 
-export function starHistoryOption(matches: MatchRecord[]): EChartsCoreOption {
+export function starHistoryOption(matches: StarHistoryItem[]): EChartsCoreOption {
+  const points: PlotPoint[] = matches.map((record) => ({
+    value: [observationTime(record), record.rating?.after ?? null],
+    record,
+    source: record.rating?.source ?? null,
+  }));
+  points.sort((a, b) => a.value[0] - b.value[0]);
+  const first = points.find((point) => point.value[1] !== null)?.record;
+  if (
+    first?.rating?.delta != null &&
+    first.rating.before !== null &&
+    first.rating.source !== null
+  ) {
+    const beforeTime = Date.parse(first.startedAt);
+    if (beforeTime < observationTime(first)) {
+      points.push({
+        value: [beforeTime, first.rating.before],
+        record: first,
+        source: first.rating.source,
+      });
+      points.sort((a, b) => a.value[0] - b.value[0]);
+    }
+  }
+
+  const measured: PlotPoint[] = [];
+  const gaps: [number, number | null][] = [];
+  const connected = new Set<PlotPoint>();
+  let previous: PlotPoint | undefined;
+  let previousIndex = -1;
+  for (const [index, point] of points.entries()) {
+    if (point.value[1] !== null) {
+      if (previous) {
+        if (point.source != null && point.source === previous.source) {
+          connected.add(previous);
+          connected.add(point);
+          if (index > previousIndex + 1) {
+            gaps.push(previous.value, point.value, [point.value[0], null]);
+          }
+        } else {
+          // A change of sampling source is not a missing comparable observation.
+          measured.push({ value: [point.value[0], null] });
+        }
+      }
+      previous = point;
+      previousIndex = index;
+    }
+    measured.push(point);
+  }
+  for (const point of measured) {
+    point.symbolSize = point.value[1] !== null && !connected.has(point) ? 4 : 0;
+  }
+
+  const tooltip: TooltipComponentOption = {
+    trigger: 'axis',
+    renderMode: 'richText',
+    confine: true,
+    transitionDuration: 0,
+    shadowBlur: 0,
+    borderWidth: 1,
+    borderColor: '#dce5e3',
+    backgroundColor: '#fff',
+    padding: [7, 9],
+    textStyle: { color: '#37534a', fontSize: 11 },
+    axisPointer: { type: 'line', lineStyle: { color: '#b9cbc4', type: 'dashed', width: 1 } },
+    formatter: (params) => {
+      const item = (Array.isArray(params) ? params : [params]).find(
+        (item) => item.seriesId === 'stars',
+      );
+      const point = item?.data as PlotPoint | undefined;
+      if (!point?.record) return '';
+      const value = point.value[1];
+      const source = point.source === 'public-profile' ? '公开采样' : '游戏事件';
+      return `${formatDateTime(new Date(point.value[0]).toISOString())}\n${value === null ? '未采集评分' : `${formatStars(value)} Star · ${point.source == null ? '来源未知' : source}`}`;
+    },
+  };
   return {
     animation: false,
-    grid: { top: 18, right: 18, bottom: 32, left: 52 },
-    tooltip: { trigger: 'item', renderMode: 'richText', confine: true },
+    grid: { top: 36, right: 18, bottom: 68, left: 52 },
+    tooltip,
+    toolbox: {
+      top: 0,
+      right: 12,
+      itemSize: 13,
+      itemGap: 16,
+      iconStyle: { borderColor: '#7c8e87', borderWidth: 1.3 },
+      emphasis: { iconStyle: { borderColor: '#008080' } },
+      feature: {
+        dataZoom: {
+          yAxisIndex: 'none',
+          title: { zoom: '框选放大', back: '返回上一区间' },
+          brushStyle: { color: 'transparent', borderColor: '#008080', borderWidth: 1 },
+        },
+        myPan: {
+          show: true,
+          title: '拖动平移',
+          icon: 'path://M12 2L8 6M12 2L16 6M12 2V22M12 22L8 18M12 22L16 18M2 12L6 8M2 12L6 16M2 12H22M22 12L18 8M22 12L18 16',
+          onclick: (_model: unknown, api: Pick<EChartsType, 'dispatchAction'>) => {
+            api.dispatchAction({
+              type: 'takeGlobalCursor',
+              key: 'dataZoomSelect',
+              dataZoomSelectActive: false,
+            });
+          },
+        },
+        restore: { title: '恢复完整历史' },
+      },
+    },
     xAxis: {
-      type: 'category',
-      data: ['赛前', ...matches.map((match) => formatDateTime(match.startedAt))],
+      type: 'time',
       boundaryGap: false,
-      axisLabel: { color: '#647878', fontSize: 10, hideOverlap: true },
-      axisLine: { lineStyle: { color: '#e1e8e8' } },
+      splitNumber: 5,
+      axisLabel: { color: '#8a9b92', fontSize: 10, hideOverlap: true },
+      axisLine: { lineStyle: { color: '#e0e8e3' } },
       axisTick: { show: false },
+      splitLine: { show: false },
     },
     yAxis: {
       type: 'value',
       scale: true,
       minInterval: 0.1,
-      axisLabel: { color: '#647878', fontSize: 10, formatter: formatStars },
-      splitLine: { lineStyle: { color: '#e1e8e8', type: 'dashed' } },
+      splitNumber: 4,
+      axisLabel: { color: '#8a9b92', fontSize: 10, formatter: formatStars },
+      splitLine: { lineStyle: { color: '#edf1ee', width: 1 } },
     },
-    series: matches.map((match, index) => {
-      const rating = match.rating!;
-      const color =
-        rating.delta === null || rating.delta === 0
-          ? '#647878'
-          : rating.delta > 0
-            ? '#15803d'
-            : '#dc2626';
-      const change = starChangePresentation(rating);
-      const incomparable = rating.delta === null && rating.before !== null && rating.after !== null;
-      return {
+    dataZoom: [
+      {
+        type: 'inside',
+        xAxisIndex: 0,
+        start: 0,
+        end: 100,
+        filterMode: 'none',
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: false,
+        preventDefaultMouseMove: true,
+      },
+      {
+        type: 'slider',
+        xAxisIndex: 0,
+        start: 0,
+        end: 100,
+        filterMode: 'none',
+        bottom: 15,
+        left: 52,
+        right: 18,
+        height: 18,
+        borderColor: '#dce5df',
+        backgroundColor: '#fff',
+        fillerColor: 'transparent',
+        showDataShadow: false,
+        showDetail: false,
+        brushSelect: true,
+        brushStyle: { color: 'transparent', borderColor: '#008080', borderWidth: 1 },
+        handleSize: 14,
+        moveHandleSize: 0,
+        handleStyle: { color: '#fff', borderColor: '#739f90', borderWidth: 1 },
+      },
+    ],
+    series: [
+      {
+        id: 'stars',
         type: 'line',
-        name: match.gameId || match.id,
-        data: [
-          [index, incomparable ? null : rating.before],
-          [index + 1, rating.after],
-        ],
-        connectNulls: false,
+        data: measured,
+        showSymbol: true,
+        showAllSymbol: true,
         symbol: 'circle',
-        symbolSize: 7,
-        lineStyle: { color, width: 2 },
-        itemStyle: { color },
-        tooltip: {
-          formatter: () =>
-            [
-              formatDateTime(match.startedAt),
-              `对局 ${match.gameId || match.id}`,
-              `赛前 ${rating.before === null ? '—' : formatStars(rating.before)}`,
-              `赛后 ${rating.after === null ? '—' : formatStars(rating.after)}`,
-              `Star 变化 ${change.label}`,
-              ...(change.note ? [change.note] : []),
-            ].join('\n'),
-        },
-      };
-    }),
+        connectNulls: false,
+        lineStyle: { width: 1.8, color: '#008080' },
+        itemStyle: { color: '#008080' },
+        emphasis: { scale: false },
+        z: 3,
+      },
+      {
+        id: 'missing',
+        type: 'line',
+        data: gaps,
+        showSymbol: false,
+        connectNulls: false,
+        silent: true,
+        lineStyle: { width: 1.4, type: 'dashed', color: '#84aaa0' },
+        tooltip: { show: false },
+        emphasis: { disabled: true },
+        z: 2,
+      },
+    ],
   };
 }
 
-function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
+function AccountStarChart({
+  matches,
+  showAccount,
+}: {
+  matches: StarHistoryItem[];
+  showAccount: boolean;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const [loadError, setLoadError] = useState(false);
-  const first = matches[0]!;
-  const latest = matches.at(-1)!;
-  const latestStars = latest.rating?.after;
-  const delta = latest.rating?.delta ?? null;
-
+  const account =
+    matches.find((match) => match.rating?.username != null)?.rating?.username ?? '未知账号';
   const chartRef = useRef<EChartsType | null>(null);
   const appliedSignature = useRef<string | null>(null);
   const signature = JSON.stringify(
     matches.map((match) => [
       match.id,
+      match.runId,
+      match.server,
       match.gameId,
       match.startedAt,
-      match.rating?.before,
-      match.rating?.after,
-      match.rating?.delta,
+      match.endedAt,
+      match.rating,
     ]),
   );
   const latestData = useRef({ matches, signature });
@@ -101,7 +258,29 @@ function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
   useEffect(() => {
     latestData.current = { matches, signature };
     if (chartRef.current && appliedSignature.current !== signature) {
-      chartRef.current.setOption(starHistoryOption(matches), { notMerge: true });
+      const option = starHistoryOption(matches);
+      const zoom = (
+        chartRef.current.getOption().dataZoom as
+          | {
+              start: number;
+              end: number;
+              startValue: number;
+              endValue: number;
+            }[]
+          | undefined
+      )?.[0];
+      chartRef.current.setOption(option, { notMerge: true });
+      if (
+        zoom &&
+        (zoom.start !== 0 || zoom.end !== 100) &&
+        typeof zoom.startValue === 'number' &&
+        typeof zoom.endValue === 'number'
+      ) {
+        chartRef.current.dispatchAction(
+          { type: 'dataZoom', startValue: zoom.startValue, endValue: zoom.endValue },
+          { silent: true },
+        );
+      }
       appliedSignature.current = signature;
     }
   }, [matches, signature]);
@@ -161,15 +340,12 @@ function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
   }, []);
 
   return (
-    <div className="min-w-0 rounded-[3px] border border-line bg-surface px-3 pt-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted">
-        <span>
-          {first.rating?.username ?? '未知账号'} · {first.server} · {matches.length} 场有评分记录
-        </span>
-        <span className={`font-semibold tabular ${starChangeTone(delta)}`}>
-          最近赛后 {latestStars == null ? '未记录' : `${formatStars(latestStars)} ★`}
-        </span>
-      </div>
+    <div className="min-w-0">
+      {showAccount && (
+        <p className="text-[10px] text-muted">
+          {account} · {matches[0]!.server}
+        </p>
+      )}
       {loadError && (
         <p role="status" className="py-2 text-[11px] text-danger">
           图表加载失败，请刷新页面重试；下方对局列表仍可查看评分。
@@ -177,37 +353,29 @@ function AccountStarChart({ matches }: { matches: MatchRecord[] }) {
       )}
       <div
         ref={container}
-        className="h-48 w-full"
+        className="h-72 w-full sm:h-80"
         role="img"
-        aria-label={`${first.rating?.username ?? '未知账号'} 的 Star 变化图，按时间从左到右，共 ${matches.length} 场；详细数值见下方对局列表`}
+        aria-label={`${account} 的完整 Star 历史图，可框选放大、拖动平移；虚线表示缺失区间`}
       />
     </div>
   );
 }
 
-export function StarHistoryChart({ matches }: { matches: MatchRecord[] }) {
+export function StarHistoryChart({ matches }: { matches: StarHistoryItem[] }) {
   const groups = useMemo(() => groupStarHistory(matches), [matches]);
   return (
     <section
-      className="space-y-2 border-b border-line bg-surface-subtle px-4 py-3"
-      aria-label="Star 变化图"
+      className="space-y-2 border-b border-line bg-surface px-4 py-3"
+      aria-label="Star 历史图"
     >
-      <div className="flex flex-wrap items-center justify-between gap-1.5">
-        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink">
-          <TrendingUp size={13} className="text-teal" /> Star 变化
-        </h3>
-        <span className="text-[9.5px] text-muted">当前页 · 按时间排序 · 绿涨 / 红跌</span>
-      </div>
+      <h3 className="text-xs font-semibold text-ink">Star 历史</h3>
       {groups.size ? (
-        [...groups].map(([key, items]) => <AccountStarChart key={key} matches={items} />)
+        [...groups].map(([key, items]) => (
+          <AccountStarChart key={key} matches={items} showAccount={groups.size > 1} />
+        ))
       ) : (
-        <p className="py-4 text-center text-[11px] text-muted">
-          当前页暂无 Star 记录；旧记录不会补造评分变化。
-        </p>
+        <p className="py-4 text-center text-[11px] text-muted">暂无可用的赛后 Star 记录</p>
       )}
-      <p className="text-[9.5px] leading-relaxed text-faint">
-        缺失评分不连线。公开资料采样可能有结算延迟；未采集到赛前或赛后评分时，不计算涨跌。
-      </p>
     </section>
   );
 }
