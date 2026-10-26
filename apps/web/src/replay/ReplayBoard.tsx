@@ -23,7 +23,7 @@ export function ReplayBoard({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [available, setAvailable] = useState(640);
+  const [available, setAvailable] = useState<{ width: number; height: number } | null>(null);
   const [images, setImages] = useState<HTMLImageElement[]>([]);
 
   useEffect(() => {
@@ -54,13 +54,18 @@ export function ReplayBoard({
     const container = containerRef.current;
     if (!container) return;
     const observer = new ResizeObserver(([entry]) => {
-      if (entry && entry.contentRect.width > 0) setAvailable(entry.contentRect.width);
+      if (entry && entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+        setAvailable({ width: entry.contentRect.width, height: entry.contentRect.height });
+      }
     });
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
 
-  const scale = Math.min(DEFAULT_TILE_PX / CELL, available / (replay.width * CELL)) * zoom;
+  const scale =
+    (available
+      ? Math.min(available.width / (replay.width * CELL), available.height / (replay.height * CELL))
+      : DEFAULT_TILE_PX / CELL) * zoom;
   const width = replay.width * CELL * scale;
   const height = replay.height * CELL * scale;
 

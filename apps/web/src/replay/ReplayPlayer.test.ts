@@ -149,7 +149,7 @@ describe('ReplayPlayer interaction', () => {
     click('放大地图');
     expect(canvas.style.width).toBe('120px');
     const fit = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === '适应宽度',
+      (button) => button.textContent === '适应窗口',
     )!;
     act(() => fit.click());
     expect(canvas.style.width).toBe('96px');
@@ -169,11 +169,76 @@ describe('ReplayPlayer interaction', () => {
     );
     render();
     act(() =>
-      callbacks[0]!([{ contentRect: { width: 60 } } as ResizeObserverEntry], {} as ResizeObserver),
+      callbacks[0]!(
+        [{ contentRect: { width: 60, height: 200 } } as ResizeObserverEntry],
+        {} as ResizeObserver,
+      ),
     );
     const canvas = container.querySelector('canvas')!;
     expect(canvas.style.width).toBe('60px');
     expect(canvas.style.height).toBe('40px');
+  });
+  it('fits both viewport dimensions and expands again when more space is available', () => {
+    const callbacks: ResizeObserverCallback[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          callbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    render();
+    const resize = (width: number, height: number) =>
+      act(() =>
+        callbacks[0]!(
+          [{ contentRect: { width, height } } as ResizeObserverEntry],
+          {} as ResizeObserver,
+        ),
+      );
+    const canvas = container.querySelector('canvas')!;
+    resize(600, 100);
+    expect(canvas.style.width).toBe('150px');
+    expect(canvas.style.height).toBe('100px');
+    resize(300, 400);
+    expect(canvas.style.width).toBe('300px');
+    expect(canvas.style.height).toBe('200px');
+    click('放大地图');
+    expect(canvas.style.width).toBe('375px');
+    const fit = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === '适应窗口',
+    )!;
+    act(() => fit.click());
+    expect(canvas.style.width).toBe('300px');
+  });
+  it('floats a live score table over the board and keeps game details in the sidebar', () => {
+    render();
+    const stage = container.querySelector('.replay-stage')!;
+    const sidebar = container.querySelector('.replay-sidebar')!;
+    const scores = stage.querySelector('table[aria-label="玩家统计 · 当前帧"]')!;
+    expect([...scores.querySelectorAll('thead th')].map((cell) => cell.textContent)).toEqual([
+      '玩家',
+      '兵力',
+      '领地',
+    ]);
+    expect(scores.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(scores.querySelector('tbody tr th')?.textContent).toContain('self己方');
+    expect(scores.querySelector('tbody td')?.textContent).toBe('1');
+    expect(sidebar.querySelector('table')).toBeNull();
+    expect(sidebar.textContent).toContain('test-game');
+    expect(sidebar.querySelector('[aria-label="跳转回合"]')).not.toBeNull();
+    expect(sidebar.querySelector('.replay-footer')).toBeNull();
+    expect(sidebar.querySelector('.replay-explainer')).toBeNull();
+    expect(sidebar.textContent).not.toContain('敌方操作不可得');
+    expect(container.querySelector<HTMLDialogElement>('.replay-help')!.open).toBe(false);
+    const controls = container.querySelector('.replay-controls')!;
+    expect(controls.querySelector('[aria-label="播放录像"]')).not.toBeNull();
+    expect(controls.querySelector('[aria-label="录像时间轴"]')).not.toBeNull();
+    expect(controls.querySelector('[aria-label="播放速度"]')).not.toBeNull();
+    click('前进一帧');
+    expect(scores.querySelector('tbody td')?.textContent).toBe('2');
   });
   it('steps both ways, clamps at boundaries, and jumps to endpoints', () => {
     render();
@@ -264,6 +329,22 @@ describe('ReplayPlayer interaction', () => {
     expect(checks[0]!.checked).toBe(false);
     expect(checks[1]!.disabled).toBe(true);
     expect(container.textContent).toContain('敌方操作不可得');
+  });
+  it('shows help only in a dismissible dialog without triggering playback shortcuts', () => {
+    render();
+    const dialog = container.querySelector<HTMLDialogElement>('.replay-help')!;
+    expect(dialog.open).toBe(false);
+    click('播放帮助');
+    expect(dialog.open).toBe(true);
+    expect(dialog.textContent).toContain('敌方操作不可得');
+    expect(dialog.textContent).toContain('文件只在浏览器内解析，不上传');
+    act(() => dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })));
+    expect(frameIndex()).toBe(0);
+    click('关闭播放帮助');
+    expect(dialog.open).toBe(false);
+    click('播放帮助');
+    act(() => dialog.click());
+    expect(dialog.open).toBe(false);
   });
   it('clearly labels recordings that reached the capture limit', () => {
     render({ ...sample(), truncated: true });
