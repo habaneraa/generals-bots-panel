@@ -189,7 +189,7 @@ export function MatchDetails({ match }: { match: MatchRecord }) {
           {match.endedAt ? <TimeText value={match.endedAt} /> : '尚未记录结束'}
         </Detail>
         <Detail label="Star 变化">
-          <StarChange match={match} />
+          <StarChange match={match} showRange />
           {match.rating?.source === 'public-profile' && (
             <p className="mt-1 text-[9px] text-faint">公开资料采样，可能有结算延迟</p>
           )}

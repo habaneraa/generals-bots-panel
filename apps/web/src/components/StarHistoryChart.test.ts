@@ -35,11 +35,12 @@ const renderChange = (record: MatchRecord) =>
   renderToStaticMarkup(createElement(StarChange, { match: record }));
 
 describe('StarChange', () => {
-  it('highlights gains in green with a plus sign and before/after values', () => {
+  it('highlights gains in green, keeps the cell on one line and titles the range', () => {
     const html = renderChange(match());
     expect(html).toContain('text-green-700');
     expect(html).toContain('+1.5');
-    expect(html).toContain('12.0 → 13.5');
+    expect(html).not.toContain('12.0 → 13.5');
+    expect(html).toContain('赛前 12.0，赛后 13.5');
   });
 
   it('highlights losses in red and preserves a real zero rating', () => {
@@ -48,19 +49,22 @@ describe('StarChange', () => {
     const html = renderChange(record);
     expect(html).toContain('text-red-600');
     expect(html).toContain('-1.0');
-    expect(html).toContain('1.0 → 0.0');
+    expect(html).toContain('赛前 1.0，赛后 0.0');
   });
 
   it('distinguishes no change from missing measurements and old records', () => {
     const record = match();
     Object.assign(record.rating!, { before: 0, after: 0, delta: 0 });
-    expect(renderChange(record)).toContain('0.0 → 0.0');
+    expect(renderChange(record)).toContain('赛前 0.0，赛后 0.0');
+    expect(renderChange(record)).toContain('bg-amber-100');
     expect(renderChange(record)).not.toContain('未记录');
     Object.assign(record.rating!, { after: null, delta: null });
     expect(renderChange(record)).toContain('缺赛后值');
+    expect(renderChange(record)).toContain('bg-surface-subtle');
     expect(renderChange(record)).toContain('赛前 0.0，赛后 —');
     delete record.rating;
     expect(renderChange(record)).toContain('未记录');
+    expect(renderChange(record)).toContain('bg-surface-subtle');
   });
 
   it('includes the rating change in history rows', () => {

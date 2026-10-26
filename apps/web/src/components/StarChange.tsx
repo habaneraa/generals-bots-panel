@@ -1,4 +1,5 @@
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
+import { tonePill, type Tone } from '../lib/tone';
 
 export function formatStars(value: number): string {
   return (Math.abs(value) < 0.05 ? 0 : value).toLocaleString('zh-CN', {
@@ -32,15 +33,17 @@ export function starChangePresentation(rating: MatchRecord['rating']): {
   return { label: '未记录', note: '未采集到可用于计算的评分。' };
 }
 
-export function starChangeTone(delta: number | null): string {
-  return delta === null || delta === 0
-    ? 'text-muted'
-    : delta > 0
-      ? 'text-green-700'
-      : 'text-red-600';
+export function starChangeTone(delta: number | null): Tone {
+  return delta === null ? 'unknown' : delta > 0 ? 'good' : delta < 0 ? 'bad' : 'tie';
 }
 
-export function StarChange({ match }: { match: MatchRecord }) {
+type Props = {
+  match: MatchRecord;
+  /** 详情里在同一行内补上赛前 / 赛后数值；列表单元格保持单行。 */
+  showRange?: boolean;
+};
+
+export function StarChange({ match, showRange = false }: Props) {
   const rating = match.rating;
   const delta = rating?.delta ?? null;
   const { label, note } = starChangePresentation(rating);
@@ -50,15 +53,12 @@ export function StarChange({ match }: { match: MatchRecord }) {
   const description = note ? `${range}。${note}` : range;
 
   return (
-    <span className="inline-flex flex-col items-start gap-0.5 whitespace-nowrap tabular">
-      <span
-        className={`text-[11px] font-semibold ${starChangeTone(delta)}`}
-        title={rating ? description : undefined}
-      >
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap tabular">
+      <span className={tonePill[starChangeTone(delta)]} title={rating ? description : undefined}>
         <span className="sr-only">Star 变化：</span>
         {label}
       </span>
-      {rating && (
+      {showRange && rating && (
         <span className="text-[9px] text-faint" aria-label={description}>
           {delta === null ? `赛前 ${before} · 赛后 ${after}` : `${before} → ${after}`}
         </span>
