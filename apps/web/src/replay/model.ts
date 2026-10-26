@@ -102,7 +102,12 @@ export async function readReplayFile(file: File): Promise<Replay> {
     text += decoder.decode();
     return parseReplay(JSON.parse(text));
   } finally {
-    await reader.cancel();
-    reader.releaseLock();
+    try {
+      await reader.cancel();
+    } catch {
+      // 失败流的取消也可能拒绝，不能覆盖读取原错或阻止释放读取锁。
+    } finally {
+      reader.releaseLock();
+    }
   }
 }

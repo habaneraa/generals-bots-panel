@@ -1,5 +1,5 @@
 import { gzipSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Replay } from '../../../../packages/contracts/src/replay';
 import { readReplayFile } from './model';
 
@@ -58,5 +58,32 @@ describe('browser-local replay file import', () => {
   it('checks compressed input size before reading or allocating it', async () => {
     const file = { size: 64 * 1024 * 1024 + 1 } as File;
     await expect(readReplayFile(file)).rejects.toThrow('64 MiB');
+  });
+  it('releases the reader when the input stream fails', async () => {
+    const failure = new Error('input stream failed');
+    const stream = new ReadableStream<Uint8Array<ArrayBuffer>>({
+      start(controller) {
+        controller.error(failure);
+      },
+    });
+    const file = new File(['{}'], 'failed.json');
+    vi.spyOn(file, 'stream').mockReturnValue(stream);
+    await expect(readReplayFile(file)).rejects.toBe(failure);
+    expect(stream.locked).toBe(false);
+  });
+  it('preserves the read error and releases the reader if cancellation also fails', async () => {
+    const failure = new Error('input stream failed');
+    const stream = new ReadableStream<Uint8Array<ArrayBuffer>>({
+      start(controller) {
+        controller.error(failure);
+      },
+    });
+    const reader = stream.getReader();
+    vi.spyOn(reader, 'cancel').mockRejectedValueOnce(new Error('cancellation failed'));
+    vi.spyOn(stream, 'getReader').mockReturnValue(reader);
+    const file = new File(['{}'], 'failed.json');
+    vi.spyOn(file, 'stream').mockReturnValue(stream);
+    await expect(readReplayFile(file)).rejects.toBe(failure);
+    expect(stream.locked).toBe(false);
   });
 });
