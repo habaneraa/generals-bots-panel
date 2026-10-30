@@ -87,8 +87,8 @@ interface ReplayAction {
 
 ## 接口、复用与限制
 
-- `GET /api/replays/:server/:gameId`：读取 gzip、校验格式与身份，返回 JSON；没有文件为 404。
-- `GET /api/replays/:server/:gameId/download`：下载原始 gzip。
+- `GET /api/replays/:server/:gameId?playerId=<player-id>`：读取所选 Player 目录的 gzip、校验格式与身份，返回 JSON；没有文件为 404，不回退到其他 Player 的录像库。
+- `GET /api/replays/:server/:gameId/download?playerId=<player-id>`：下载该 Player 的原始 gzip。控制台生成的独立播放器链接也保留 Player ID，切换账号不会改变已打开录像的归属。
 - 导入/读取都验证版本、数值范围、尺寸、帧顺序、关键帧间隔、差分索引和动作引用。浏览器导入限制压缩前后均不超过 64 MiB；共享解码器额外限制总棋盘数值，避免构造巨大棋盘。
 - 独立 [ReplayPlayer](../apps/web/src/replay/ReplayPlayer.tsx) 只接收 `replay` 和可选 `active`，不依赖 API、控制台或运行中的游戏；新录像使用新的 React key 挂载。读取、导入和错误反馈在 [ReplayWorkspace](../apps/web/src/replay/ReplayWorkspace.tsx)。
 - 共享结构、导入校验及随机访问解码在 [replay.ts](../packages/contracts/src/replay.ts)；录制和落盘在 [replays.ts](../apps/server/src/storage/replays.ts)。

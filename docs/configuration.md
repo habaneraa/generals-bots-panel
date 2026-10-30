@@ -32,11 +32,13 @@ PORT=3100 DATA_DIR=/绝对路径/panel-data npm start
 
 同一数据目录只允许一个服务实例。不要为了验证使用已有真实数据目录，也不要把账号原文或密钥放入环境示例、启动参数或日志。
 
-## agent 运行参数
+## Player 与 agent 运行参数
 
-表单和历史快照使用[共享运行参数 schema](../packages/contracts/src/index.ts)，由[配置存储](../apps/server/src/storage/config.ts)校验并原子写入。环境变量仅配置面板进程，不覆盖 agent 的运行参数。
+Player 的服务器与 User ID 字符串独立于运行配置，`<server, userId>` 唯一标识账号。通过左下角浮窗新增、切换或删除 Player；新增只提交服务器和 User ID，昵称必须由服务器 `get_username` 返回并持久缓存，不接受手工昵称。查询昵称不会加入对局，失败不创建账号；已有缓存会在启动时后台刷新及游戏连接成功时更新，查询失败不清空有效缓存。User ID 默认隐藏，但不是加密存储。Player 注册信息与上次选择保存在数据目录的注册表中，每个 Player 有独立的运行参数、历史、日志和录像库。删除前会弹出包含身份、运行状态和数据量的警告确认；运行中不可删除，确认只删除本地 Player 及其全部数据，不影响远端游戏账号。
 
-加载优先级为：已有 JSON 配置 → 首次启动时旧数据库配置的迁移值 → schema 默认值。无效 JSON 明确报错，不静默回退；运行时修改参数需要先停止 agent。历史中的配置保持为当次运行快照。
+表单和历史快照使用[共享运行参数 schema](../packages/contracts/src/index.ts)，由[配置存储](../apps/server/src/storage/config.ts)校验并原子写入。运行参数不含 `server`、`userId` 或 `userIdFile`；环境变量仅配置面板进程，不覆盖 agent 的运行参数。
+
+每个 Player 加载自己的 JSON 配置，新账号使用 schema 默认值。只支持当前 Player 注册表与数据库格式：不读取旧单玩家根配置或账号文件，不迁移旧 SQLite settings，不自动兼容旧版本。无效 JSON、缺失 Player 数据或不支持的数据库版本明确报错，不静默回退或将历史归给其他账号。运行时修改参数需要先停止该 Player 的 agent；历史中的配置保持为当次运行快照。
 
 ## 测试隔离与验证入口
 
