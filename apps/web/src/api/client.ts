@@ -3,9 +3,21 @@ import type {
   Dashboard,
   MatchFilters,
   MatchPage,
+  PlayerDetails,
+  PlayerInput,
   RunConfig,
   StarHistoryResponse,
 } from '../../../../packages/contracts/src/index';
+
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...options, credentials: 'same-origin' });
@@ -19,42 +31,91 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       // 代理或断开的服务可能返回 HTML，保留 HTTP 状态才能继续定位故障。
     }
-    throw new Error(message);
+    throw new ApiRequestError(message, response.status);
   }
   return response.json() as Promise<T>;
 }
 
-function mutation<T>(path: string, method: 'POST' | 'PUT', config?: RunConfig): Promise<T> {
+export function playerPath(path: string, playerId: string): string {
+  return `${path}${path.includes('?') ? '&' : '?'}${new URLSearchParams({ playerId })}`;
+}
+
+async function mutation<T>(
+  path: string,
+  method: 'POST' | 'PUT' | 'DELETE',
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   // 无请求体时不能带 JSON content-type，否则 Fastify 会按空 body 拒绝。
-  if (!config) return request<T>(path, { method });
   return request<T>(path, {
     method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
+    ...(signal ? { signal } : {}),
+    ...(body === undefined
+      ? {}
+      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   });
 }
 
 export const api = {
-  dashboard: (signal: AbortSignal): Promise<Dashboard> => request('/api/dashboard', { signal }),
-  replay: (server: string, gameId: string, signal: AbortSignal): Promise<Replay> =>
-    request(`/api/replays/${encodeURIComponent(server)}/${encodeURIComponent(gameId)}`, { signal }),
-  matches: (filters: MatchFilters, page: number, signal: AbortSignal): Promise<MatchPage> => {
+  dashboard: (signal: AbortSignal, playerId?: string): Promise<Dashboard> =>
+    request(playerId !== undefined ? playerPath('/api/dashboard', playerId) : '/api/dashboard', {
+      signal,
+    }),
+  addPlayer: (input: PlayerInput, signal: AbortSignal): Promise<Dashboard> =>
+    mutation('/api/players', 'POST', input, signal),
+  selectPlayer: (playerId: string, signal: AbortSignal): Promise<Dashboard> =>
+    mutation('/api/players/active', 'PUT', { playerId }, signal),
+  playerDetails: (id: string, signal: AbortSignal): Promise<PlayerDetails> =>
+    request(`/api/players/${encodeURIComponent(id)}`, { signal }),
+  deletePlayer: (id: string, playerId: string, signal: AbortSignal): Promise<Dashboard> =>
+    mutation(
+      playerPath(`/api/players/${encodeURIComponent(id)}`, playerId),
+      'DELETE',
+      undefined,
+      signal,
+    ),
+  replay: (
+    server: string,
+    gameId: string,
+    signal: AbortSignal,
+    playerId: string,
+  ): Promise<Replay> =>
+    request(
+      playerPath(
+        `/api/replays/${encodeURIComponent(server)}/${encodeURIComponent(gameId)}`,
+        playerId,
+      ),
+      { signal },
+    ),
+  matches: (
+    filters: MatchFilters,
+    page: number,
+    signal: AbortSignal,
+    playerId: string,
+  ): Promise<MatchPage> => {
     const query = new URLSearchParams({ page: String(page), pageSize: '20' });
     for (const [key, value] of Object.entries(filters)) {
       if (value !== undefined) query.set(key, String(value));
     }
-    return request(`/api/matches?${query}`, { signal });
+    return request(playerPath(`/api/matches?${query}`, playerId), { signal });
   },
-  starHistory: (filters: MatchFilters, signal: AbortSignal): Promise<StarHistoryResponse> => {
+  starHistory: (
+    filters: MatchFilters,
+    signal: AbortSignal,
+    playerId: string,
+  ): Promise<StarHistoryResponse> => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(filters)) {
       if (value !== undefined) query.set(key, String(value));
     }
-    return request(`/api/matches/star-history?${query}`, { signal });
+    return request(playerPath(`/api/matches/star-history?${query}`, playerId), { signal });
   },
-  save: (config: RunConfig): Promise<RunConfig> => mutation('/api/config', 'PUT', config),
-  start: (config: RunConfig): Promise<Dashboard> => mutation('/api/runs', 'POST', config),
-  stop: (): Promise<Dashboard> => mutation('/api/runs/stop', 'POST'),
+  save: (config: RunConfig, playerId: string, signal?: AbortSignal): Promise<RunConfig> =>
+    mutation(playerPath('/api/config', playerId), 'PUT', config, signal),
+  start: (config: RunConfig, playerId: string, signal?: AbortSignal): Promise<Dashboard> =>
+    mutation(playerPath('/api/runs', playerId), 'POST', config, signal),
+  stop: (playerId: string, signal?: AbortSignal): Promise<Dashboard> =>
+    mutation(playerPath('/api/runs/stop', playerId), 'POST', undefined, signal),
 };
 
 export function errorMessage(error: unknown): string {

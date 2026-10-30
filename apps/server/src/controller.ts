@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   runConfigSchema,
   type Dashboard,
+  type Player,
   type LogLevel,
   type MatchRecord,
   type RunConfig,
@@ -34,25 +34,31 @@ export class Controller {
   private task: Promise<void> | null = null;
   private abort: AbortController | null = null;
   private listeners = new Set<() => void>();
+  private closed = false;
   private notifyTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     readonly repository: Repository,
     private readonly root: string,
-    private readonly gameFactory: GameFactory = async (config) => {
-      const userId = (await readFile(resolve(root, config.userIdFile), 'utf8')).trim();
-      if (!userId || userId.length > 4096) throw new Error('账号文件为空或长度非法');
-      return new SocketGame(config.server, userId, undefined, (message) =>
-        this.writeLog(
-          message.startsWith('本地录像')
-            ? 'warn'
-            : message.startsWith('自动投降：')
-              ? 'info'
-              : 'debug',
-          message,
-        ),
+    readonly player: Player,
+    private readonly gameFactory: GameFactory = async () => {
+      return new SocketGame(
+        player.server,
+        player.userId,
+        undefined,
+        (message) =>
+          this.writeLog(
+            message.startsWith('本地录像')
+              ? 'warn'
+              : message.startsWith('自动投降：')
+                ? 'info'
+                : 'debug',
+            message,
+          ),
+        (nickname) => onNickname?.(nickname),
       );
     },
+    onNickname?: (nickname: string) => void,
   ) {
     this.replays = new ReplayStore(repository.dataDir);
     const run = repository.latestRun();
@@ -74,6 +80,8 @@ export class Controller {
 
   dashboard(): Dashboard {
     return {
+      player: structuredClone(this.player),
+      players: [structuredClone(this.player)],
       state: structuredClone(this.state),
       config: this.repository.getConfig(),
       stats: this.repository.stats(),
@@ -121,6 +129,7 @@ export class Controller {
   }
 
   saveConfig(value: unknown): RunConfig {
+    if (this.closed) throw new HttpError(409, 'Player 正在关闭或已删除');
     if (this.active) throw new HttpError(409, '请停止当前运行后再修改参数');
     const config = runConfigSchema.parse(value);
     this.repository.saveConfig(config);
@@ -151,7 +160,7 @@ export class Controller {
       nextGameAt: null,
     };
     this.abort = new AbortController();
-    this.writeLog('info', `启动 WebSocket 会话：${config.server}`);
+    this.writeLog('info', `启动 WebSocket 会话：${this.player.server}`);
     this.task = this.execute(config, this.abort.signal).finally(() => {
       this.task = null;
       this.abort = null;
@@ -176,7 +185,7 @@ export class Controller {
       id: randomUUID(),
       runId: this.state.run!.id,
       mode: config.mode,
-      server: config.server,
+      server: this.player.server,
       gameId: frame.gameId,
       opponent:
         (isGameEnd(frame)
@@ -187,7 +196,7 @@ export class Controller {
       endedAt: null,
       outcome: null,
       turns: Math.max(0, (isGameEnd(frame) ? frame.turn : frame.observation.turn) + 1),
-      replayUrl: `https://${config.server === 'bots' ? 'bot.' : ''}generals.io/replays/${encodeURIComponent(frame.gameId)}`,
+      replayUrl: `https://${this.player.server === 'bots' ? 'bot.' : ''}generals.io/replays/${encodeURIComponent(frame.gameId)}`,
       rating: structuredClone(
         frame.rating ?? {
           username:
@@ -297,7 +306,7 @@ export class Controller {
     let fallback: ReplayRecorder | null = null;
     let began = false;
     try {
-      game = await this.gameFactory(config);
+      game = await this.gameFactory(config, this.player);
       signal.throwIfAborted();
       await game.connect(signal);
       this.writeLog('info', '连接已就绪');
@@ -314,7 +323,7 @@ export class Controller {
         const match = this.newMatch(current, config);
         fallback = game.getReplay
           ? null
-          : new ReplayRecorder(config.server, (message) => this.writeLog('warn', message));
+          : new ReplayRecorder(this.player.server, (message) => this.writeLog('warn', message));
         if (!isGameEnd(current)) fallback?.capture(current);
         const details = match.details!;
         began = false;
@@ -445,6 +454,7 @@ export class Controller {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     await this.stop();
     if (this.notifyTimer) clearTimeout(this.notifyTimer);
     this.listeners.clear();

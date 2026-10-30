@@ -3,6 +3,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MatchFilters, StarHistoryItem } from '../../../../packages/contracts/src/index';
+import { PlayerScope } from './PlayerScope';
 import { useStarHistory } from './useStarHistory';
 
 function item(id: string): StarHistoryItem {
@@ -42,8 +43,16 @@ function Harness() {
   return null;
 }
 
-async function render() {
-  await act(async () => root.render(createElement(Harness)));
+async function render(playerId = 'player-a') {
+  await act(async () =>
+    root.render(
+      createElement(
+        PlayerScope.Provider,
+        { key: playerId, value: playerId },
+        createElement(Harness),
+      ),
+    ),
+  );
 }
 
 beforeEach(() => {
@@ -64,12 +73,29 @@ afterEach(async () => {
 });
 
 describe('useStarHistory', () => {
+  it('cancels old Player history and ignores its response after a scope remount', async () => {
+    const old = deferredResponse();
+    fetchMock.mockReturnValueOnce(old.promise);
+    await render();
+    const signal = fetchMock.mock.calls[0]![1]!.signal!;
+    const latest = deferredResponse();
+    fetchMock.mockReturnValueOnce(latest.promise);
+    await render('player-b');
+    expect(signal.aborted).toBe(true);
+    expect(
+      new URL(String(fetchMock.mock.calls[1]![0]), 'http://localhost').searchParams.get('playerId'),
+    ).toBe('player-b');
+    expect(result.data).toBeNull();
+    await act(async () => latest.resolve([item('player-b-match')]));
+    await act(async () => old.resolve([item('player-a-match')]));
+    expect(result.data?.items[0]?.id).toBe('player-b-match');
+  });
   it('requests complete history by default and sends only applied filters, never pagination', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ items: [item('unrated')] })));
     await render();
     const initial = new URL(String(fetchMock.mock.calls[0]![0]), 'http://localhost');
     expect(initial.pathname).toBe('/api/matches/star-history');
-    expect([...initial.searchParams]).toEqual([]);
+    expect([...initial.searchParams]).toEqual([['playerId', 'player-a']]);
     expect(result.data?.items).toEqual([item('unrated')]);
     filters = { server: 'bots', outcome: 'won', opponent: 'a b', minTurns: 0 };
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ items: [] })));
@@ -80,6 +106,7 @@ describe('useStarHistory', () => {
       outcome: 'won',
       opponent: 'a b',
       minTurns: '0',
+      playerId: 'player-a',
     });
     expect(filtered.searchParams.has('page')).toBe(false);
     expect(filtered.searchParams.has('pageSize')).toBe(false);

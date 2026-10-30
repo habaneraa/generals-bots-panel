@@ -78,7 +78,7 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
         <fieldset className="min-w-0" disabled={locked}>
           <legend className="sr-only">运行配置</legend>
           <div className="px-4 py-4">
-            <SectionLabel index="01">Agent 与账号</SectionLabel>
+            <SectionLabel index="01">Agent 启动</SectionLabel>
             <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
               <ConfigField
                 id="command"
@@ -116,23 +116,6 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
                 />
               </ConfigField>
               <ConfigField
-                id="userIdFile"
-                label="用户 ID 文件（必填）"
-                hint="用于真实账号，填写服务器可读取的用户 ID 文件路径。"
-                error={errors.userIdFile}
-              >
-                <input
-                  {...described('userIdFile')}
-                  className="input font-mono text-[12px]"
-                  value={draft.userIdFile}
-                  onChange={(event) => update('userIdFile', event.target.value)}
-                  placeholder="browser_agent/.user-id"
-                  required
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </ConfigField>
-              <ConfigField
                 id="cwd"
                 label="Agent 工作目录"
                 hint="留空使用运行器默认目录。"
@@ -154,24 +137,6 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
               <SectionLabel index="02">对局与调度</SectionLabel>
             </div>
             <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
-              <ConfigField
-                id="server"
-                label="游戏服务器"
-                hint="仅支持 bots / generals 服务器。"
-                error={errors.server}
-              >
-                <select
-                  {...described('server')}
-                  className="select"
-                  value={draft.server}
-                  onChange={(event) =>
-                    update('server', event.target.value === 'generals' ? 'generals' : 'bots')
-                  }
-                >
-                  <option value="bots">bots</option>
-                  <option value="generals">generals</option>
-                </select>
-              </ConfigField>
               <ConfigField
                 id="protocol"
                 label="通信协议"

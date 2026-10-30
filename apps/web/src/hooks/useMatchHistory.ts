@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MatchFilters, MatchPage } from '../../../../packages/contracts/src/index';
 import { api, errorMessage, isAbortError } from '../api/client';
+import { usePlayerId } from './PlayerScope';
 
 type HistoryResult = { key: string; data: MatchPage };
 type HistoryQuery = { filters: MatchFilters; page: number };
 
 export function useMatchHistory(refreshKey: string) {
+  const playerId = usePlayerId();
   const [query, setQuery] = useState<HistoryQuery>({ filters: {}, page: 1 });
   const { filters, page } = query;
-  const key = JSON.stringify(query);
+  const key = JSON.stringify({ playerId, ...query });
   const [result, setResult] = useState<HistoryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,7 +24,7 @@ export function useMatchHistory(refreshKey: string) {
     let queued = false;
 
     async function load() {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || !playerId) return;
       if (inFlight) {
         queued = true;
         return;
@@ -31,7 +33,7 @@ export function useMatchHistory(refreshKey: string) {
       setLoading(true);
       setError(null);
       try {
-        const data = await api.matches(filters, page, controller.signal);
+        const data = await api.matches(filters, page, controller.signal, playerId);
         if (controller.signal.aborted) return;
         const lastPage = Math.max(1, Math.ceil(data.total / data.pageSize));
         if (page > lastPage) setQuery({ filters, page: lastPage });
@@ -56,7 +58,7 @@ export function useMatchHistory(refreshKey: string) {
       controller.abort();
       refresh.current = null;
     };
-  }, [filters, page, key, attempt]);
+  }, [playerId, filters, page, key, attempt]);
 
   useEffect(() => {
     if (lastRefreshKey.current === refreshKey) return;

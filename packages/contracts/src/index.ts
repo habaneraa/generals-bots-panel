@@ -1,10 +1,32 @@
 import { z } from 'zod';
 
+export const playerInputSchema = z
+  .object({
+    server: z.enum(['generals', 'bots']),
+    userId: z.string().trim().min(1).max(4096),
+  })
+  .strict();
+export type PlayerInput = z.infer<typeof playerInputSchema>;
+export interface Player extends PlayerInput {
+  id: string;
+  nickname: string;
+}
+export interface PlayerDetails {
+  player: Player;
+  dataDir: string;
+  phase: RunPhase;
+  active: boolean;
+  runs: number;
+  matches: number;
+  stats: Stats;
+  logs: number;
+  replays: number;
+  lastRunAt: string | null;
+}
+
 export const runConfigSchema = z
   .object({
     mode: z.literal('live').default('live'),
-    server: z.enum(['generals', 'bots']).default('generals'),
-    userIdFile: z.string().trim().max(4096).default('browser_agent/.user-id'),
     command: z.string().trim().max(4096).default('bash'),
     args: z.array(z.string().max(4096)).max(100).default(['../AverageJoe/run.sh']),
     cwd: z.string().trim().max(4096).default(''),
@@ -17,7 +39,7 @@ export const runConfigSchema = z
   })
   .strict()
   .superRefine((config, ctx) => {
-    for (const key of ['command', 'userIdFile'] as const) {
+    for (const key of ['command'] as const) {
       if (!config[key]) ctx.addIssue({ code: 'custom', path: [key], message: '此项不能为空' });
     }
   });
@@ -94,7 +116,7 @@ export interface MatchRecord {
   id: string;
   runId: string;
   mode: 'live';
-  server: RunConfig['server'];
+  server: Player['server'];
   gameId: string;
   opponent: string;
   startedAt: string;
@@ -176,6 +198,8 @@ export const matchQuerySchema = matchFiltersSchema.safeExtend({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 export interface Dashboard {
+  player: Player | null;
+  players: Player[];
   state: RunState;
   config: RunConfig;
   stats: Stats;

@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Replay } from '../../../../packages/contracts/src/replay';
 import { api } from '../api/client';
+import { PlayerScope } from '../hooks/PlayerScope';
 import { ReplayWorkspace } from './ReplayWorkspace';
 
 vi.mock('./ReplayPlayer', () => ({
@@ -91,8 +92,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function render(active = true) {
-  await act(async () => root.render(createElement(ReplayWorkspace, { active })));
+async function render(active = true, playerId = 'player-a') {
+  await act(async () =>
+    root.render(
+      createElement(
+        PlayerScope.Provider,
+        { key: playerId, value: playerId },
+        createElement(ReplayWorkspace, { active }),
+      ),
+    ),
+  );
 }
 
 function player() {
@@ -126,6 +135,31 @@ function expectOnlySidebarForm() {
 }
 
 describe('ReplayWorkspace layout', () => {
+  it('aborts the previous Player replay and ignores late results after a keyed scope switch', async () => {
+    window.history.replaceState(null, '', '#replay=bots/first-game');
+    const old = deferredReplay();
+    const latest = deferredReplay();
+    vi.mocked(api.replay).mockImplementation((_server, _gameId, _signal, playerId) =>
+      playerId === 'player-a' ? old.promise : latest.promise,
+    );
+    await render();
+    const signal = vi.mocked(api.replay).mock.lastCall![2];
+    await render(true, 'player-b');
+    expect(signal.aborted).toBe(true);
+    expect(api.replay).toHaveBeenLastCalledWith(
+      'bots',
+      'first-game',
+      expect.any(AbortSignal),
+      'player-b',
+    );
+    expect(player()).toBeNull();
+    await act(async () => latest.resolve(sample('player-b-game')));
+    await act(async () => old.resolve(sample('player-a-game')));
+    expect(player().dataset.gameId).toBe('player-b-game');
+    expect(sidebar().querySelector('a')!.getAttribute('href')).toBe(
+      '/api/replays/bots/player-b-game/download?playerId=player-b',
+    );
+  });
   it('shows the standalone open/import form before any replay is loaded', async () => {
     await render();
     expect(api.replay).not.toHaveBeenCalled();
@@ -143,7 +177,12 @@ describe('ReplayWorkspace layout', () => {
   it('moves the form and recording source/download into sidebarContent after a hash load', async () => {
     window.history.replaceState(null, '', '#replay=bots/first-game');
     await render();
-    expect(api.replay).toHaveBeenCalledWith('bots', 'first-game', expect.any(AbortSignal));
+    expect(api.replay).toHaveBeenCalledWith(
+      'bots',
+      'first-game',
+      expect.any(AbortSignal),
+      'player-a',
+    );
     expectOnlySidebarForm();
     expect(container.querySelector('.replay-empty')).toBeNull();
     const details = sidebar().querySelector('details')!;
@@ -161,7 +200,9 @@ describe('ReplayWorkspace layout', () => {
     expect(source.textContent).toContain('未标记结束');
     const download = source.querySelector('a')!;
     expect(download.textContent).toContain('下载录像');
-    expect(download.getAttribute('href')).toBe('/api/replays/bots/first-game/download');
+    expect(download.getAttribute('href')).toBe(
+      '/api/replays/bots/first-game/download?playerId=player-a',
+    );
     expect(download.hasAttribute('download')).toBe(true);
     expect(player().dataset.active).toBe('true');
     await render(false);
@@ -176,7 +217,12 @@ describe('ReplayWorkspace layout', () => {
     const pending = deferredReplay();
     vi.mocked(api.replay).mockReturnValueOnce(pending.promise);
     await submitReplacement('  second-game  ');
-    expect(api.replay).toHaveBeenLastCalledWith('generals', 'second-game', expect.any(AbortSignal));
+    expect(api.replay).toHaveBeenLastCalledWith(
+      'generals',
+      'second-game',
+      expect.any(AbortSignal),
+      'player-a',
+    );
     expectOnlySidebarForm();
     expect(player().dataset.gameId).toBe('first-game');
     expect(player().dataset.active).toBe('false');
@@ -195,7 +241,7 @@ describe('ReplayWorkspace layout', () => {
     expect(player().dataset.active).toBe('true');
     expect(container.querySelector('[role="status"]')).toBeNull();
     expect(sidebar().querySelector('a')!.getAttribute('href')).toBe(
-      '/api/replays/generals/second-game/download',
+      '/api/replays/generals/second-game/download?playerId=player-a',
     );
     expect(sidebar().querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(
       false,
@@ -216,7 +262,7 @@ describe('ReplayWorkspace layout', () => {
     expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
     expect(sidebar().querySelector('[role="alert"]')!.textContent).toContain('录像不存在');
     expect(sidebar().querySelector('a')!.getAttribute('href')).toBe(
-      '/api/replays/bots/first-game/download',
+      '/api/replays/bots/first-game/download?playerId=player-a',
     );
     expect(sidebar().querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(
       false,

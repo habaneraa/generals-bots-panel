@@ -5,11 +5,8 @@ import { fetchDuelStars } from './ratings.js';
 import { ReplayRecorder } from './recorder.js';
 import { frameIdentity, isGameEnd } from './types.js';
 import type { AgentAction, GameConnection, GameEnd, GameFrame, SubmitStatus } from './types.js';
+import { gameEndpoint, validNickname } from './username.js';
 
-const SERVERS = {
-  generals: 'wss://ws.generals.io',
-  bots: 'wss://botws.generals.io',
-};
 // Public client v31.4.3 queue argument, not an account credential.
 const CLIENT_KEY = 'sd09fjdZ03i0ejwi_changeme';
 const DIRECTIONS = [
@@ -44,53 +41,51 @@ export class SocketGame implements GameConnection {
     userId: string,
     endpoint?: string,
     private readonly log?: (message: string) => void,
+    private readonly onNickname?: (nickname: string) => void,
   ) {
     this.userId = userId.trim();
     this.recorder = new ReplayRecorder(server, this.log);
     if (!this.userId) throw new Error('A game account ID is required');
-    this.socket = new GameSocket(
-      endpoint ?? `${SERVERS[server]}/socket.io/?EIO=4&transport=websocket`,
-      {
-        event: (event, args) => {
-          if (event === 'error_set_username' && !args[0]) return;
-          if (event === 'gio_error' || event.startsWith('error_')) {
-            // Server error payloads may contain account information.
-            throw new Error('Game server rejected the request');
-          }
-          if (event.startsWith('game_')) {
-            this.state.update(event, args[0]);
-            if (event === 'game_start' || event === 'game_update') {
-              const frame = this.state.current();
-              if (frame && !isGameEnd(frame)) {
-                try {
-                  this.recorder.capture(frame);
-                } catch {
-                  this.recorder.truncate('本地录像采集失败，已保留有效前缀');
-                }
-                const view = frame.observation;
-                if (
-                  !this.closed &&
-                  !this.surrenderRequested &&
-                  (view.my_army * 100 < view.opp_army || view.my_land * 100 < view.opp_land)
-                ) {
-                  this.surrenderRequested = true;
-                  this.socket.emit('surrender');
-                  this.log?.(
-                    `自动投降：兵力 ${view.my_army}/${view.opp_army}，领地 ${view.my_land}/${view.opp_land}，低于敌方的 1%`,
-                  );
-                }
+    this.socket = new GameSocket(endpoint ?? gameEndpoint(server), {
+      event: (event, args) => {
+        if (event === 'error_set_username' && !args[0]) return;
+        if (event === 'gio_error' || event.startsWith('error_')) {
+          // Server error payloads may contain account information.
+          throw new Error('Game server rejected the request');
+        }
+        if (event.startsWith('game_')) {
+          this.state.update(event, args[0]);
+          if (event === 'game_start' || event === 'game_update') {
+            const frame = this.state.current();
+            if (frame && !isGameEnd(frame)) {
+              try {
+                this.recorder.capture(frame);
+              } catch {
+                this.recorder.truncate('本地录像采集失败，已保留有效前缀');
+              }
+              const view = frame.observation;
+              if (
+                !this.closed &&
+                !this.surrenderRequested &&
+                (view.my_army * 100 < view.opp_army || view.my_land * 100 < view.opp_land)
+              ) {
+                this.surrenderRequested = true;
+                this.socket.emit('surrender');
+                this.log?.(
+                  `自动投降：兵力 ${view.my_army}/${view.opp_army}，领地 ${view.my_land}/${view.opp_land}，低于敌方的 1%`,
+                );
               }
             }
-            if (event === 'game_start') this.collectStars();
-            this.notify();
           }
-        },
-        error: (error) => {
-          this.failure ??= error;
+          if (event === 'game_start') this.collectStars();
           this.notify();
-        },
+        }
       },
-    );
+      error: (error) => {
+        this.failure ??= error;
+        this.notify();
+      },
+    });
   }
 
   async connect(signal: AbortSignal): Promise<void> {
@@ -98,10 +93,9 @@ export class SocketGame implements GameConnection {
     try {
       await this.socket.connect(signal);
       const reply = await this.socket.request('get_username', [this.userId], signal);
-      const username = reply[0];
-      if (typeof username !== 'string' || !username.trim()) {
-        throw new Error('Choose a game username before starting the bot');
-      }
+      signal.throwIfAborted();
+      const username = validNickname(reply[0]);
+      this.onNickname?.(username);
       this.botApi = username.startsWith('[Bot]');
       this.connected = true;
       this.log?.(`Connected to ${this.server} game server`);

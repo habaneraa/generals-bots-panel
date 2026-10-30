@@ -8,8 +8,6 @@ export type RunDraft = Omit<RunConfig, NumericKey | 'args'> &
 
 const fieldLabels: Record<keyof RunConfig, string> = {
   mode: '运行模式',
-  server: '游戏服务器',
-  userIdFile: '用户 ID 文件',
   command: 'Agent 命令',
   args: '启动参数',
   cwd: '工作目录',

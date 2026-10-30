@@ -1,11 +1,13 @@
 import { ArrowUpRight, ChevronRight } from 'lucide-react';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
 import { formatDateTime, localReplayHref } from '../lib/format';
+import { usePlayerId } from '../hooks/PlayerScope';
 import { OutcomeBadge } from './OutcomeBadge';
 import { StarChange } from './StarChange';
 
 export function MatchHistoryRow({ match, onOpen }: { match: MatchRecord; onOpen: () => void }) {
-  const replay = localReplayHref(match);
+  const playerId = usePlayerId();
+  const replay = localReplayHref(match, playerId);
 
   return (
     <tr className="match-row">

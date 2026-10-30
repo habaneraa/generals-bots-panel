@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MatchPage } from '../../../../packages/contracts/src/index';
 import { api } from '../api/client';
+import { PlayerScope } from './PlayerScope';
 import { useMatchHistory } from './useMatchHistory';
 
 function page(total = 60, current = 1): MatchPage {
@@ -30,8 +31,16 @@ function Harness() {
   return null;
 }
 
-async function render() {
-  await act(async () => root.render(createElement(Harness)));
+async function render(playerId = 'player-a') {
+  await act(async () =>
+    root.render(
+      createElement(
+        PlayerScope.Provider,
+        { key: playerId, value: playerId },
+        createElement(Harness),
+      ),
+    ),
+  );
 }
 
 beforeEach(() => {
@@ -50,9 +59,28 @@ afterEach(async () => {
 });
 
 describe('useMatchHistory', () => {
+  it('aborts old Player requests, resets filters/page and ignores late responses on remount', async () => {
+    await render();
+    await act(async () => result.applyFilters({ outcome: 'won' }));
+    const old = deferredPage();
+    vi.mocked(api.matches).mockReturnValueOnce(old.promise);
+    await act(async () => result.setPage(2));
+    const signal = vi.mocked(api.matches).mock.lastCall![2];
+    const latest = deferredPage();
+    vi.mocked(api.matches).mockReturnValueOnce(latest.promise);
+    await render('player-b');
+    expect(signal.aborted).toBe(true);
+    expect(result.filters).toEqual({});
+    expect(result.page).toBe(1);
+    expect(result.data).toBeNull();
+    expect(api.matches).toHaveBeenLastCalledWith({}, 1, expect.any(AbortSignal), 'player-b');
+    await act(async () => latest.resolve(page(2)));
+    await act(async () => old.resolve(page(999, 2)));
+    expect(result.data).toEqual(page(2));
+  });
   it('loads the first page and resets pagination when applying filters', async () => {
     await render();
-    expect(api.matches).toHaveBeenCalledWith({}, 1, expect.any(AbortSignal));
+    expect(api.matches).toHaveBeenCalledWith({}, 1, expect.any(AbortSignal), 'player-a');
     expect(result.data).toEqual(page());
     expect(result.loading).toBe(false);
     vi.mocked(api.matches).mockResolvedValueOnce(page(60, 2));
@@ -65,6 +93,7 @@ describe('useMatchHistory', () => {
       { server: 'bots', minTurns: 0 },
       1,
       expect.any(AbortSignal),
+      'player-a',
     );
   });
 
@@ -153,7 +182,12 @@ describe('useMatchHistory', () => {
       expect(result.data).toEqual(lastPage === 1 ? page() : null);
       expect(result.loading).toBe(true);
       expect(signal.aborted).toBe(true);
-      expect(api.matches).toHaveBeenLastCalledWith({}, lastPage, expect.any(AbortSignal));
+      expect(api.matches).toHaveBeenLastCalledWith(
+        {},
+        lastPage,
+        expect.any(AbortSignal),
+        'player-a',
+      );
       await act(async () => corrected.resolve(page(total, lastPage)));
       expect(result.data).toEqual(page(total, lastPage));
       expect(result.loading).toBe(false);

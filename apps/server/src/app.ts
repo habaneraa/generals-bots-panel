@@ -6,11 +6,11 @@ import fastifyStatic from '@fastify/static';
 import { z, ZodError } from 'zod';
 import { DEFAULT_API_PORT, DEV_WEB_PORT, LOOPBACK_HOST } from '../../../config/runtime.js';
 import { matchFiltersSchema, matchQuerySchema } from '../../../packages/contracts/src/index.js';
-import type { Controller } from './controller.js';
+import type { PlayerManager } from './player-manager.js';
 import { HttpError } from './errors.js';
 import { replayAddressSchema } from './storage/replays.js';
 
-export async function createApp(controller: Controller, webDir: string, port = DEFAULT_API_PORT) {
+export async function createApp(manager: PlayerManager, webDir: string, port = DEFAULT_API_PORT) {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
   const streams = new Set<ServerResponse>();
   const hosts = new Set([`${LOOPBACK_HOST}:${port}`, `localhost:${port}`]);
@@ -48,26 +48,70 @@ export async function createApp(controller: Controller, webDir: string, port = D
   });
 
   app.get('/api/health', async () => ({ ok: true }));
-  app.get('/api/dashboard', async () => controller.dashboard());
-  app.put('/api/config', async (request) => controller.saveConfig(request.body));
-  app.post('/api/runs', async (request, reply) =>
-    reply.code(201).send(controller.start(request.body)),
+  const playerQuery = z.object({ playerId: z.string().optional() }).strict();
+  const selection = (query: unknown) => playerQuery.parse(query).playerId;
+  app.get('/api/players', async () => manager.players);
+  app.post('/api/players', async (request, reply) => {
+    const abort = new AbortController();
+    const cancel = () => {
+      if (!reply.raw.writableEnded) abort.abort();
+    };
+    request.raw.once('aborted', cancel);
+    reply.raw.once('close', cancel);
+    try {
+      return reply.code(201).send(await manager.add(request.body, abort.signal));
+    } finally {
+      request.raw.off('aborted', cancel);
+      reply.raw.off('close', cancel);
+    }
+  });
+  app.get('/api/players/:id', async (request) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    return manager.details(id);
+  });
+  app.delete('/api/players/:id', async (request) => {
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    return manager.remove(id, selection(request.query));
+  });
+  app.put('/api/players/active', async (request) => {
+    const { playerId } = z.object({ playerId: z.string() }).strict().parse(request.body);
+    return manager.select(playerId);
+  });
+  app.get('/api/dashboard', async (request) => manager.dashboard(selection(request.query)));
+  app.put('/api/config', async (request) =>
+    manager.controller(selection(request.query)).saveConfig(request.body),
   );
-  app.post('/api/runs/stop', async () => controller.stop());
+  app.post('/api/runs', async (request, reply) => {
+    const id = selection(request.query);
+    manager.controller(id).start(request.body);
+    return reply.code(201).send(manager.dashboard(id));
+  });
+  app.post('/api/runs/stop', async (request) => {
+    const controller = manager.controller(selection(request.query));
+    await controller.stop();
+    return manager.dashboard(controller.player.id);
+  });
   app.get('/api/matches', async (request) => {
-    const { page, pageSize, ...filters } = matchQuerySchema.parse(request.query);
+    const { playerId, ...query } = request.query as Record<string, unknown>;
+    const controller = manager.controller(z.string().optional().parse(playerId));
+    const { page, pageSize, ...filters } = matchQuerySchema.parse(query);
     return controller.repository.matches(page, pageSize, filters);
   });
-  app.get('/api/matches/star-history', async (request) =>
-    controller.repository.starHistory(matchFiltersSchema.parse(request.query)),
-  );
+  app.get('/api/matches/star-history', async (request) => {
+    const { playerId, ...query } = request.query as Record<string, unknown>;
+    return manager
+      .controller(z.string().optional().parse(playerId))
+      .repository.starHistory(matchFiltersSchema.parse(query));
+  });
   app.get('/api/replays/:server/:gameId', async (request) => {
+    const controller = manager.controller(selection(request.query));
     const { server, gameId } = replayAddressSchema.parse(request.params);
     const replay = await controller.replays.load(server, gameId);
     if (!replay) throw new HttpError(404, '本地录像不存在');
     return replay;
   });
   app.get('/api/replays/:server/:gameId/download', async (request, reply) => {
+    const controller = manager.controller(selection(request.query));
     const { server, gameId } = replayAddressSchema.parse(request.params);
     const packed = await controller.replays.packed(server, gameId);
     if (!packed) throw new HttpError(404, '本地录像不存在');
@@ -77,6 +121,7 @@ export async function createApp(controller: Controller, webDir: string, port = D
       .send(packed);
   });
   app.get('/api/runs/:id/logs/download', async (request, reply) => {
+    const controller = manager.controller(selection(request.query));
     const { id } = z.object({ id: z.uuid() }).parse(request.params);
     if (!controller.repository.getRun(id)) throw new HttpError(404, '运行记录不存在');
     const path = controller.repository.logPath(id);
@@ -87,6 +132,8 @@ export async function createApp(controller: Controller, webDir: string, port = D
       .send(createReadStream(path));
   });
   app.get('/api/events', (request, reply) => {
+    const playerId = selection(request.query);
+    manager.dashboard(playerId); // Validate before hijacking, so invalid explicit IDs return 404.
     reply.hijack();
     streams.add(reply.raw);
     reply.raw.writeHead(200, {
@@ -98,21 +145,25 @@ export async function createApp(controller: Controller, webDir: string, port = D
     let blocked = false;
     let changed = false;
     const send = () => {
-      if (reply.raw.destroyed) return;
+      if (reply.raw.destroyed || reply.raw.writableEnded) return;
+      if (playerId !== undefined && !manager.players.some((player) => player.id === playerId)) {
+        reply.raw.end(`event: player-deleted\ndata: ${JSON.stringify({ playerId })}\n\n`);
+        return;
+      }
       if (blocked) {
         changed = true;
         return;
       }
       changed = false;
       blocked = !reply.raw.write(
-        `event: dashboard\ndata: ${JSON.stringify(controller.dashboard())}\n\n`,
+        `event: dashboard\ndata: ${JSON.stringify(manager.dashboard(playerId))}\n\n`,
       );
     };
     reply.raw.on('drain', () => {
       blocked = false;
       if (changed) send(); // Keep only the latest state, not a queue of historical snapshots.
     });
-    const unsubscribe = controller.subscribe(send);
+    const unsubscribe = manager.subscribe(send);
     const heartbeat = setInterval(() => {
       if (!reply.raw.destroyed && !blocked) blocked = !reply.raw.write(': heartbeat\n\n');
     }, 15000);
@@ -139,7 +190,7 @@ export async function createApp(controller: Controller, webDir: string, port = D
   app.addHook('preClose', async () => {
     for (const stream of streams) stream.end();
     streams.clear();
-    await controller.close();
+    await manager.close();
   });
   return app;
 }

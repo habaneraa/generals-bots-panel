@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -84,14 +84,16 @@ describe('automatic surrender outside the agent process', () => {
   it('persists the surrender trigger and scores at info level through the controller', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'panel-surrender-'));
     const repository = new Repository(join(dir, 'data'));
-    const controller = new Controller(repository, dir);
-    writeFileSync(join(dir, '.user-id'), 'private-account-id');
+    const controller = new Controller(repository, dir, {
+      id: 'surrender-test',
+      server: 'bots',
+      userId: 'private-account-id',
+      nickname: 'test',
+    });
     socket.openingArmy = 0;
     try {
       controller.start({
         ...defaultConfig,
-        server: 'bots',
-        userIdFile: '.user-id',
         autopilot: false,
       });
       await vi.waitFor(() => expect(controller.active).toBe(false));

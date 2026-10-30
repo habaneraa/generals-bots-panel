@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MatchFilters, StarHistoryResponse } from '../../../../packages/contracts/src/index';
 import { api, errorMessage, isAbortError } from '../api/client';
+import { usePlayerId } from './PlayerScope';
 
 type HistoryResult = { key: string; data: StarHistoryResponse };
 
 export function useStarHistory(filters: MatchFilters, refreshKey: string) {
-  const key = JSON.stringify(filters);
+  const playerId = usePlayerId();
+  const key = JSON.stringify({ playerId, filters });
   const [result, setResult] = useState<HistoryResult | null>(null);
   const [error, setError] = useState<{ key: string; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -19,7 +21,7 @@ export function useStarHistory(filters: MatchFilters, refreshKey: string) {
     let queued = false;
 
     async function load() {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || !playerId) return;
       if (inFlight) {
         queued = true;
         return;
@@ -28,7 +30,7 @@ export function useStarHistory(filters: MatchFilters, refreshKey: string) {
       setLoading(true);
       setError(null);
       try {
-        const data = await api.starHistory(filters, controller.signal);
+        const data = await api.starHistory(filters, controller.signal, playerId);
         if (!controller.signal.aborted) setResult({ key, data });
       } catch (cause) {
         if (!controller.signal.aborted && !isAbortError(cause)) {
@@ -52,7 +54,7 @@ export function useStarHistory(filters: MatchFilters, refreshKey: string) {
       controller.abort();
       refresh.current = null;
     };
-  }, [filters, key, attempt]);
+  }, [playerId, filters, key, attempt]);
 
   useEffect(() => {
     if (lastRefreshKey.current === refreshKey) return;

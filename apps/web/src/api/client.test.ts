@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultConfig } from '../../../../packages/contracts/src/index';
-import { api } from './client';
+import { api, ApiRequestError } from './client';
 
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 
@@ -12,12 +12,72 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('API 请求契约', () => {
+  it('所有 Player 数据请求显式携带且编码身份，不依赖可变的 active', async () => {
+    fetchMock.mockImplementation(async () => new Response('{}'));
+    const signal = new AbortController().signal;
+    const id = 'player /?&甲';
+    await api.dashboard(signal, id);
+    await api.matches({ server: 'bots' }, 1, signal, id);
+    await api.starHistory({}, signal, id);
+    await api.replay('bots', 'game', signal, id);
+    await api.save(defaultConfig, id, signal);
+    await api.start(defaultConfig, id, signal);
+    await api.stop(id, signal);
+    for (const [path, options] of fetchMock.mock.calls) {
+      expect(new URL(String(path), 'http://localhost').searchParams.get('playerId')).toBe(id);
+      expect(options?.signal).toBe(signal);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+  });
+
+  it('新增与切换 Player 使用独立接口和直接 userId 字符串', async () => {
+    fetchMock.mockImplementation(async () => new Response('{}'));
+    const signal = new AbortController().signal;
+    const input = { server: 'bots', userId: 'direct-user-id' } as const;
+    await api.addPlayer(input, signal);
+    await api.selectPlayer('player-b', signal);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/players', {
+      method: 'POST',
+      credentials: 'same-origin',
+      signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/players/active', {
+      method: 'PUT',
+      credentials: 'same-origin',
+      signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: 'player-b' }),
+    });
+    expect('server' in defaultConfig).toBe(false);
+    expect('userIdFile' in defaultConfig).toBe(false);
+  });
+  it('详情按目标路径编码，删除另携带当前 workspace 且不发送空 JSON body', async () => {
+    fetchMock.mockImplementation(async () => new Response('{}'));
+    const signal = new AbortController().signal;
+    const target = 'target /?&甲';
+    const workspace = 'workspace /?&乙';
+    await api.playerDetails(target, signal);
+    await api.deletePlayer(target, workspace, signal);
+    const path = `/api/players/${encodeURIComponent(target)}`;
+    expect(fetchMock).toHaveBeenNthCalledWith(1, path, { credentials: 'same-origin', signal });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `${path}?${new URLSearchParams({ playerId: workspace })}`,
+      {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        signal,
+      },
+    );
+  });
   it('停止请求不携带空 JSON 请求体或 Content-Type', async () => {
     const dashboard = { status: 'stopped' };
     fetchMock.mockResolvedValue(new Response(JSON.stringify(dashboard)));
 
-    await expect(api.stop()).resolves.toEqual(dashboard);
-    expect(fetchMock).toHaveBeenCalledWith('/api/runs/stop', {
+    await expect(api.stop('player-a')).resolves.toEqual(dashboard);
+    expect(fetchMock).toHaveBeenCalledWith('/api/runs/stop?playerId=player-a', {
       method: 'POST',
       credentials: 'same-origin',
     });
@@ -29,8 +89,8 @@ describe('API 请求契约', () => {
   ] as const)('%s 以 JSON 发送完整运行参数', async (action, path, method) => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify(defaultConfig)));
 
-    await api[action](defaultConfig);
-    expect(fetchMock).toHaveBeenCalledWith(path, {
+    await api[action](defaultConfig, 'player-a');
+    expect(fetchMock).toHaveBeenCalledWith(`${path}?playerId=player-a`, {
       method,
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -48,6 +108,15 @@ describe('API 请求契约', () => {
     fetchMock.mockResolvedValue(new Response(body, { status: 502 }));
 
     await expect(api.dashboard(new AbortController().signal)).rejects.toThrow(message);
+  });
+
+  it.each([403, 404, 500])('HTTP %i 暴露明确状态而不依赖错误文案', async (status) => {
+    fetchMock.mockResolvedValue(new Response('{"message":"相同错误文案"}', { status }));
+    const error = await api
+      .dashboard(new AbortController().signal, 'player-a')
+      .catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect(error).toMatchObject({ status, message: '相同错误文案' });
   });
 
   it('将取消信号传给 fetch，并原样传播取消错误', async () => {
@@ -70,8 +139,8 @@ describe('API 请求契约', () => {
     const filters = { opponent: 'a b%_&', minTurns: 0, gameId: undefined };
     const signal = new AbortController().signal;
 
-    await api.matches(filters, 3, signal);
-    await api.starHistory(filters, signal);
+    await api.matches(filters, 3, signal, 'player-a');
+    await api.starHistory(filters, signal, 'player-a');
     const urls = fetchMock.mock.calls.map(([path]) => new URL(String(path), 'http://localhost'));
     expect(urls[0]!.pathname).toBe('/api/matches');
     expect(urls[1]!.pathname).toBe('/api/matches/star-history');
@@ -80,10 +149,12 @@ describe('API 请求契约', () => {
       pageSize: '20',
       opponent: 'a b%_&',
       minTurns: '0',
+      playerId: 'player-a',
     });
     expect(Object.fromEntries(urls[1]!.searchParams)).toEqual({
       opponent: 'a b%_&',
       minTurns: '0',
+      playerId: 'player-a',
     });
     for (const [, options] of fetchMock.mock.calls) {
       expect(options).toEqual({ signal, credentials: 'same-origin' });
@@ -94,9 +165,9 @@ describe('API 请求契约', () => {
     fetchMock.mockResolvedValue(new Response('{}'));
     const signal = new AbortController().signal;
 
-    await api.replay('bots', 'game/with?#空格', signal);
+    await api.replay('bots', 'game/with?#空格', signal, 'player-a');
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/replays/bots/game%2Fwith%3F%23%E7%A9%BA%E6%A0%BC',
+      '/api/replays/bots/game%2Fwith%3F%23%E7%A9%BA%E6%A0%BC?playerId=player-a',
       { signal, credentials: 'same-origin' },
     );
   });

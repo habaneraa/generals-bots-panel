@@ -14,7 +14,7 @@ export function RunOverview({ state, pending, onStop }: Props) {
   const running = isRunning(state.phase);
   const replay = replayHref(state.match?.replayUrl ?? null);
   const caption = state.run
-    ? `启动于 ${formatDateTime(state.run.startedAt)} · ${state.run.config.server} 服务器`
+    ? `启动于 ${formatDateTime(state.run.startedAt)}`
     : '配置你的 Bot，让下一场对局从这里开始。';
   const maxGames = state.run ? (state.run.config.autopilot ? state.run.config.maxGames : 1) : null;
   const failed = state.phase === 'failed';

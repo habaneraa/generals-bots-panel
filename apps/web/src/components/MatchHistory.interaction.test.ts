@@ -7,6 +7,7 @@ import {
   type Dashboard,
   type MatchRecord,
 } from '../../../../packages/contracts/src/index';
+import { PlayerScope } from '../hooks/PlayerScope';
 import { App } from '../App';
 import { useDashboard } from '../hooks/useDashboard';
 import { useMatchHistory } from '../hooks/useMatchHistory';
@@ -48,7 +49,11 @@ let history: ReturnType<typeof useMatchHistory>;
 async function render() {
   await act(async () =>
     root.render(
-      createElement(MatchHistory, { refreshKey: 'refresh', starHistoryRefreshKey: 'rating' }),
+      createElement(
+        PlayerScope.Provider,
+        { value: 'player-a' },
+        createElement(MatchHistory, { refreshKey: 'refresh', starHistoryRefreshKey: 'rating' }),
+      ),
     ),
   );
 }
@@ -130,13 +135,19 @@ describe('MatchHistory star history', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     const url = new URL(String(vi.mocked(fetch).mock.calls[1]![0]), 'http://localhost');
     expect(url.pathname).toBe('/api/matches/star-history');
-    expect(Object.fromEntries(url.searchParams)).toEqual({ server: 'bots', outcome: 'won' });
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      server: 'bots',
+      outcome: 'won',
+      playerId: 'player-a',
+    });
   });
 });
 
 describe('App star history refresh key', () => {
   it('ignores turns and details snapshots but refreshes for ratings and match identities', async () => {
     let dashboard: Dashboard = {
+      player: { id: 'player-a', server: 'generals', userId: 'secret-a', nickname: 'Player A' },
+      players: [{ id: 'player-a', server: 'generals', userId: 'secret-a', nickname: 'Player A' }],
       state: {
         run: null,
         phase: 'playing',
@@ -154,6 +165,14 @@ describe('App star history refresh key', () => {
     };
     vi.mocked(useDashboard).mockImplementation(() => ({
       dashboard,
+      player: dashboard.player,
+      players: dashboard.players,
+      playerPending: false,
+      playerAction: null,
+      selectPlayer: vi.fn(),
+      addPlayer: vi.fn(),
+      cancelAddPlayer: vi.fn(),
+      deletePlayer: vi.fn(),
       connection: 'connected',
       loadError: null,
       actionError: null,

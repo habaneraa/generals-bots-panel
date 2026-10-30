@@ -1,6 +1,8 @@
 import { Download, ListFilter, Terminal } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { LogEntry, LogLevel } from '../../../../packages/contracts/src/index';
+import { playerPath } from '../api/client';
+import { usePlayerId } from '../hooks/PlayerScope';
 import { formatTime } from '../lib/format';
 
 type Props = { entries: LogEntry[]; runId: string | null; active: boolean };
@@ -13,6 +15,7 @@ const levelTone: Record<LogLevel, string> = {
 };
 
 export function LogsPanel({ entries, runId, active }: Props) {
+  const playerId = usePlayerId();
   const controlId = useId();
   const [level, setLevel] = useState<LogLevel | 'all'>('all');
   const [follow, setFollow] = useState(true);
@@ -34,10 +37,10 @@ export function LogsPanel({ entries, runId, active }: Props) {
           </h2>
           <p className="panel-caption">当前运行最近 200 条 · 通过事件流实时更新</p>
         </div>
-        {runId ? (
+        {runId && playerId ? (
           <a
             className="icon-btn"
-            href={`/api/runs/${encodeURIComponent(runId)}/logs/download`}
+            href={playerPath(`/api/runs/${encodeURIComponent(runId)}/logs/download`, playerId)}
             aria-label="下载本轮完整 JSONL 日志"
             title="下载完整 JSONL 日志"
           >

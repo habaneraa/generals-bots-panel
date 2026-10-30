@@ -5,23 +5,41 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MatchFilters, MatchRecord } from '../../../../packages/contracts/src/index.js';
 import { createApp } from '../app.js';
-import { Controller } from '../controller.js';
-import { Repository } from './repository.js';
+import { PlayerManager } from '../player-manager.js';
+import type { Repository } from './repository.js';
 
-const resources: { dir: string; repo: Repository; app?: FastifyInstance }[] = [];
+const resources: {
+  dir: string;
+  repo: Repository;
+  manager: PlayerManager;
+  app?: FastifyInstance;
+}[] = [];
 afterEach(async () => {
-  for (const { dir, repo, app } of resources.splice(0)) {
+  for (const { dir, manager, app } of resources.splice(0)) {
     try {
       await app?.close();
     } finally {
-      repo.close();
+      await manager.close();
       rmSync(dir, { recursive: true, force: true });
     }
   }
 });
-function fixture() {
+async function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'panel-filters-'));
-  const resource: (typeof resources)[number] = { dir, repo: new Repository(dir) };
+  const manager = new PlayerManager(
+    dir,
+    dir,
+    async () => {
+      throw new Error('Network access is forbidden in storage tests');
+    },
+    async () => 'test player',
+  );
+  await manager.add({ server: 'bots', userId: 'test-account' });
+  const resource: (typeof resources)[number] = {
+    dir,
+    manager,
+    repo: manager.controller().repository,
+  };
   resources.push(resource);
   return resource;
 }
@@ -46,8 +64,8 @@ function ids(repo: Repository, filters: MatchFilters = {}) {
 }
 
 describe('match field filters', () => {
-  it('combines every filter with AND and matches server/outcome exactly', () => {
-    const { repo } = fixture();
+  it('combines every filter with AND and matches server/outcome exactly', async () => {
+    const { repo } = await fixture();
     const target = match('target', {
       opponent: 'prefix Needle suffix',
       gameId: 'prefix-42-suffix',
@@ -83,8 +101,8 @@ describe('match field filters', () => {
 
   it.each(['gameId', 'opponent'] as const)(
     'treats LIKE metacharacters and SQL text literally in %s',
-    (field) => {
-      const { repo } = fixture();
+    async (field) => {
+      const { repo } = await fixture();
       const samples = ['%', '_', '\\', 'a%_\\b', "' OR 1=1 --"];
       samples.forEach((value, index) =>
         repo.putMatch(match(`literal-${index}`, { [field]: `prefix${value}suffix` })),
@@ -101,8 +119,8 @@ describe('match field filters', () => {
     },
   );
 
-  it('uses inclusive UTC boundaries and normalizes positive and negative timezone offsets', () => {
-    const { repo } = fixture();
+  it('uses inclusive UTC boundaries and normalizes positive and negative timezone offsets', async () => {
+    const { repo } = await fixture();
     repo.putMatch(match('before', { startedAt: '2026-10-24T23:59:59.999Z' }));
     repo.putMatch(match('lower'));
     repo.putMatch(match('upper', { startedAt: '2026-10-25T01:00:00.000Z' }));
@@ -123,8 +141,8 @@ describe('match field filters', () => {
     expect(ids(repo, { startedBefore: '2026-10-25T00:00:00Z' })).toEqual(['lower', 'before']);
   });
 
-  it('distinguishes ongoing games from every finished outcome including interruptions', () => {
-    const { repo } = fixture();
+  it('distinguishes ongoing games from every finished outcome including interruptions', async () => {
+    const { repo } = await fixture();
     for (const outcome of ['won', 'lost', 'draw', 'interrupted', null] as const) {
       repo.putMatch(
         match(outcome ?? 'playing', {
@@ -139,8 +157,8 @@ describe('match field filters', () => {
     }
   });
 
-  it('includes turn boundaries and supports either side of the range including zero', () => {
-    const { repo } = fixture();
+  it('includes turn boundaries and supports either side of the range including zero', async () => {
+    const { repo } = await fixture();
     for (const turns of [0, 9, 10, 20, 21]) repo.putMatch(match(`turn-${turns}`, { turns }));
     expect(ids(repo, { minTurns: 10, maxTurns: 20 })).toEqual(['turn-20', 'turn-10']);
     expect(ids(repo, { minTurns: 20 })).toEqual(['turn-21', 'turn-20']);
@@ -148,8 +166,8 @@ describe('match field filters', () => {
     expect(ids(repo, { minTurns: 0, maxTurns: 0 })).toEqual(['turn-0']);
   });
 
-  it('keeps stable timestamp ties and filtered counts across pages including empty pages', () => {
-    const { repo } = fixture();
+  it('keeps stable timestamp ties and filtered counts across pages including empty pages', async () => {
+    const { repo } = await fixture();
     repo.putMatch(match('older', { startedAt: '2026-10-24T00:00:00.000Z' }));
     for (const id of ['first', 'second', 'third']) repo.putMatch(match(id));
     repo.putMatch(match('excluded', { server: 'generals', startedAt: '2026-10-26T00:00:00.000Z' }));
@@ -181,8 +199,8 @@ describe('match field filters', () => {
     });
   });
 
-  it('returns empty history and zero statistics for a new database', () => {
-    const { repo } = fixture();
+  it('returns empty history and zero statistics for a new database', async () => {
+    const { repo } = await fixture();
     expect(repo.matches()).toEqual({ items: [], total: 0, page: 1, pageSize: 20 });
     expect(repo.stats()).toEqual({
       total: 0,
@@ -196,11 +214,8 @@ describe('match field filters', () => {
 });
 
 async function apiFixture() {
-  const resource = fixture();
-  const controller = new Controller(resource.repo, resource.dir, async () => {
-    throw new Error('Network access is forbidden in filter tests');
-  });
-  resource.app = await createApp(controller, join(resource.dir, 'no-web'));
+  const resource = await fixture();
+  resource.app = await createApp(resource.manager, join(resource.dir, 'no-web'));
   return { ...resource, app: resource.app };
 }
 const headers = { host: 'localhost:3000' };

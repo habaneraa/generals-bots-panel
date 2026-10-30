@@ -49,9 +49,10 @@ export function formatDateTime(value: string | null): string {
 
 export function localReplayHref(
   match: Pick<MatchRecord, 'localReplay' | 'server' | 'gameId'>,
+  playerId?: string,
 ): string | undefined {
-  return match.localReplay && match.gameId
-    ? `/replay#replay=${match.server}/${encodeURIComponent(match.gameId)}`
+  return playerId && match.localReplay && match.gameId
+    ? `/replay?${new URLSearchParams({ playerId })}#replay=${match.server}/${encodeURIComponent(match.gameId)}`
     : undefined;
 }
 

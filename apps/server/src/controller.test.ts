@@ -9,8 +9,8 @@ import {
 import type { GameConnection, GameEnd } from './game/types.js';
 import { FixtureGame, fixtureObservation } from '../../../test/fixtures/game.js';
 import { AgentProcess } from './agent/process.js';
-import { Controller } from './controller.js';
-import { Repository } from './storage/repository.js';
+import type { Controller } from './controller.js';
+import { PlayerManager } from './player-manager.js';
 import { RunLog } from './storage/logs.js';
 import { createApp } from './app.js';
 
@@ -65,16 +65,22 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   vi.restoreAllMocks();
 });
-function setup(game: GameConnection = new FixtureGame()) {
+async function setup(game: GameConnection = new FixtureGame()) {
   const dir = mkdtempSync(join(tmpdir(), 'panel-controller-'));
-  const repository = new Repository(dir);
-  const controller = new Controller(repository, resolve('.'), async () => game);
+  const manager = new PlayerManager(
+    dir,
+    resolve('.'),
+    async () => game,
+    async () => 'test player',
+  );
+  await manager.add({ server: 'generals', userId: 'test-account' });
+  const controller = manager.controller();
+  const repository = controller.repository;
   cleanups.push(async () => {
-    await controller.close();
-    repository.close();
+    await manager.close();
     rmSync(dir, { recursive: true, force: true });
   });
-  return { repository, controller };
+  return { repository, controller, manager };
 }
 async function idle(controller: Controller) {
   if (!controller.active) return;
@@ -95,7 +101,7 @@ async function idle(controller: Controller) {
 
 describe('run lifecycle with isolated test inputs', () => {
   it('runs autopilot using a real Node child and persists results', async () => {
-    const { controller, repository } = setup();
+    const { controller, repository } = await setup();
     controller.start({ ...defaultConfig, autopilot: true, maxGames: 2, cooldownMs: 0 });
     expect(() => controller.start(defaultConfig)).toThrow('已有运行');
     expect(() => controller.saveConfig(defaultConfig)).toThrow('停止当前运行');
@@ -110,7 +116,7 @@ describe('run lifecycle with isolated test inputs', () => {
   });
 
   it('stops immediately during matchmaking without a match result', async () => {
-    const { controller, repository } = setup();
+    const { controller, repository } = await setup();
     controller.start(defaultConfig);
     await controller.stop();
     expect(controller.dashboard().state.phase).toBe('stopped');
@@ -118,7 +124,7 @@ describe('run lifecycle with isolated test inputs', () => {
   });
 
   it('records agent startup errors and an interrupted match', async () => {
-    const { controller, repository } = setup();
+    const { controller, repository } = await setup();
     controller.start({ ...defaultConfig, command: '/nonexistent-panel-test-executable' });
     await idle(controller);
     expect(controller.dashboard().state.phase).toBe('failed');
@@ -143,7 +149,7 @@ describe('run lifecycle with isolated test inputs', () => {
         };
       }
     }
-    const { controller, repository } = setup(new SnapshotGame());
+    const { controller, repository } = await setup(new SnapshotGame());
     controller.start(defaultConfig);
     await idle(controller);
     const record = repository.matches().items[0];
@@ -179,7 +185,7 @@ describe('run lifecycle with isolated test inputs', () => {
         return { ...(await super.next(turn, signal)), rating, endedAt: '2026-10-25T00:00:59.000Z' };
       }
     }
-    const { controller, repository } = setup(new RatingGame());
+    const { controller, repository, manager } = await setup(new RatingGame());
     controller.start(defaultConfig);
     await idle(controller);
     expect(repository.matches().items[0]?.rating).toEqual(rating);
@@ -187,7 +193,7 @@ describe('run lifecycle with isolated test inputs', () => {
       endedAt: '2026-10-25T00:00:59.000Z',
       details: { durationMs: 59000 },
     });
-    const app = await createApp(controller, resolve('nonexistent-web'));
+    const app = await createApp(manager, resolve('nonexistent-web'));
     cleanups.push(async () => {
       await app.close();
     });
@@ -207,7 +213,7 @@ describe('run lifecycle with isolated test inputs', () => {
         return result;
       }
     }
-    const { controller, repository } = setup(new StoppingGame());
+    const { controller, repository } = await setup(new StoppingGame());
     controller.start(defaultConfig);
     await idle(controller);
     expect(repository.matches().items[0]).toMatchObject({
@@ -256,7 +262,7 @@ describe('run lifecycle with isolated test inputs', () => {
           result ? { gameId: result.gameId, snapshot: result.snapshot!, rating } : null,
         close: vi.fn(),
       };
-      const { controller, repository } = setup(game);
+      const { controller, repository } = await setup(game);
       const agent = {
         begin: vi.fn(),
         act: vi.fn(async () => {
@@ -311,7 +317,7 @@ describe('run lifecycle with isolated test inputs', () => {
           resultId ? { gameId: resultId, outcome: 'won', turn: 99, winnerIndex: 0 } : null,
         close: vi.fn(),
       };
-      const { controller, repository } = setup(game);
+      const { controller, repository } = await setup(game);
       vi.spyOn(AgentProcess, 'start').mockResolvedValue({
         begin: vi.fn(),
         act: vi.fn(async () => {
@@ -342,7 +348,7 @@ describe('run lifecycle with isolated test inputs', () => {
         return { gameId: this.gameId, snapshot: snapshot(2) };
       }
     }
-    const { controller, repository } = setup(new LatestGame());
+    const { controller, repository } = await setup(new LatestGame());
     controller.start({ ...defaultConfig, command: '/nonexistent-panel-test-executable' });
     await idle(controller);
     expect(repository.matches().items[0]).toMatchObject({
@@ -376,7 +382,7 @@ describe('run lifecycle with isolated test inputs', () => {
       submit: () => 'pass',
       close: () => {},
     };
-    const { controller, repository } = setup(game);
+    const { controller, repository } = await setup(game);
     controller.start({ ...defaultConfig, command: '/agent-must-not-start' });
     await idle(controller);
     expect(controller.dashboard().state).toMatchObject({ phase: 'stopped', completedGames: 1 });
@@ -415,7 +421,7 @@ describe('run lifecycle with isolated test inputs', () => {
         });
       else agent.close.mockRejectedValue(failure);
       vi.spyOn(AgentProcess, 'start').mockResolvedValue(agent as unknown as AgentProcess);
-      const { controller, repository } = setup(game);
+      const { controller, repository } = await setup(game);
       controller.start(defaultConfig);
       await idle(controller);
       const message = `${resource} close failed`;
@@ -466,7 +472,7 @@ describe('run lifecycle with isolated test inputs', () => {
         }),
       };
       vi.spyOn(AgentProcess, 'start').mockResolvedValue(agent as unknown as AgentProcess);
-      const { controller, repository } = setup(game);
+      const { controller, repository } = await setup(game);
       controller.start(defaultConfig);
       await idle(controller);
       const dashboard = controller.dashboard();
@@ -492,8 +498,8 @@ describe('run lifecycle with isolated test inputs', () => {
   );
 
   it('validates requests and rejects cross-site command execution', async () => {
-    const { controller } = setup();
-    const app = await createApp(controller, resolve('nonexistent-web'));
+    const { manager } = await setup();
+    const app = await createApp(manager, resolve('nonexistent-web'));
     cleanups.push(async () => {
       await app.close();
     });

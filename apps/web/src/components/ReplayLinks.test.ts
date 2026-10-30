@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
+import { PlayerScope } from '../hooks/PlayerScope';
 import { MatchDetailsModal } from './MatchDetailsModal';
 import { MatchHistoryRow } from './MatchHistoryRow';
 
@@ -28,12 +29,16 @@ function renderRow(record: MatchRecord): HTMLDivElement {
   const container = document.createElement('div');
   container.innerHTML = renderToStaticMarkup(
     createElement(
-      'table',
-      null,
+      PlayerScope.Provider,
+      { value: 'player-a' },
       createElement(
-        'tbody',
+        'table',
         null,
-        createElement(MatchHistoryRow, { match: record, onOpen: () => {} }),
+        createElement(
+          'tbody',
+          null,
+          createElement(MatchHistoryRow, { match: record, onOpen: () => {} }),
+        ),
       ),
     ),
   );
@@ -43,7 +48,11 @@ function renderRow(record: MatchRecord): HTMLDivElement {
 function renderDetails(record: MatchRecord): HTMLDivElement {
   const container = document.createElement('div');
   container.innerHTML = renderToStaticMarkup(
-    createElement(MatchDetailsModal, { match: record, onClose: () => {} }),
+    createElement(
+      PlayerScope.Provider,
+      { value: 'player-a' },
+      createElement(MatchDetailsModal, { match: record, onClose: () => {} }),
+    ),
   );
   return container;
 }
@@ -54,7 +63,7 @@ describe('history replay destinations', () => {
     (server) => {
       const row = renderRow(match({ server }));
       const link = row.querySelector('a')!;
-      expect(link.getAttribute('href')).toBe(`/replay#replay=${server}/game-1`);
+      expect(link.getAttribute('href')).toBe(`/replay?playerId=player-a#replay=${server}/game-1`);
       expect(link.textContent).toContain('录像');
       expect(link.target).toBe('_blank');
       expect(link.rel).toContain('noopener');
@@ -78,7 +87,7 @@ describe('history replay destinations', () => {
       renderRow(match({ replayUrl: null }))
         .querySelector('a')
         ?.getAttribute('href'),
-    ).toBe('/replay#replay=generals/game-1');
+    ).toBe('/replay?playerId=player-a#replay=generals/game-1');
   });
 
   it('does not generate an empty replay destination', () => {
@@ -90,7 +99,7 @@ describe('history replay destinations', () => {
     const links = [...details.querySelectorAll('a')];
     expect(links).toHaveLength(2);
     expect(links[0]!.textContent).toContain('站内录像');
-    expect(links[0]!.getAttribute('href')).toBe('/replay#replay=generals/game-1');
+    expect(links[0]!.getAttribute('href')).toBe('/replay?playerId=player-a#replay=generals/game-1');
     expect(links[1]!.textContent).toContain('官网回放');
     expect(links[1]!.href).toBe('https://generals.io/replays/game-1');
     expect(links[1]!.rel).toContain('noopener');

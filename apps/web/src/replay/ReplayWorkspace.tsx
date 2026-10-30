@@ -1,12 +1,14 @@
 import { Clapperboard, Download, FolderOpen, Upload } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { parseReplay, type Replay } from '../../../../packages/contracts/src/replay';
-import { api, errorMessage, isAbortError } from '../api/client';
+import { api, errorMessage, isAbortError, playerPath } from '../api/client';
+import { usePlayerId } from '../hooks/PlayerScope';
 import { Notice, Spinner } from '../components/Shared';
 import { readReplayFile, replayAddress, replaySource } from './model';
 import { ReplayPlayer } from './ReplayPlayer';
 
 export function ReplayWorkspace({ active = true }: { active?: boolean }) {
+  const playerId = usePlayerId();
   const [server, setServer] = useState<'generals' | 'bots'>('generals');
   const [gameId, setGameId] = useState('');
   const [replay, setReplay] = useState<Replay | null>(null);
@@ -18,25 +20,32 @@ export function ReplayWorkspace({ active = true }: { active?: boolean }) {
   const generation = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function load(serverName: 'generals' | 'bots', id: string) {
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const request = ++generation.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const value = parseReplay(await api.replay(serverName, id, controller.signal));
-      if (request !== generation.current) return;
-      setReplay(value);
-      setRevision(request);
-      setSource('server');
-    } catch (cause) {
-      if (request === generation.current && !isAbortError(cause)) setError(errorMessage(cause));
-    } finally {
-      if (request === generation.current) setLoading(false);
-    }
-  }
+  const load = useCallback(
+    async (serverName: 'generals' | 'bots', id: string) => {
+      if (!playerId) {
+        setError('请从 Player 工作区打开录像，或导入本地录像文件。');
+        return;
+      }
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const request = ++generation.current;
+      setLoading(true);
+      setError(null);
+      try {
+        const value = parseReplay(await api.replay(serverName, id, controller.signal, playerId));
+        if (request !== generation.current) return;
+        setReplay(value);
+        setRevision(request);
+        setSource('server');
+      } catch (cause) {
+        if (request === generation.current && !isAbortError(cause)) setError(errorMessage(cause));
+      } finally {
+        if (request === generation.current) setLoading(false);
+      }
+    },
+    [playerId],
+  );
 
   function cancelPending() {
     generation.current++;
@@ -57,7 +66,7 @@ export function ReplayWorkspace({ active = true }: { active?: boolean }) {
       window.removeEventListener('hashchange', openHash);
       cancelPending();
     };
-  }, []);
+  }, [load]);
 
   async function importFile(file: File) {
     abortRef.current?.abort();
@@ -110,7 +119,11 @@ export function ReplayWorkspace({ active = true }: { active?: boolean }) {
             required
           />
         </label>
-        <button className="btn btn-primary" type="submit" disabled={loading || !gameId.trim()}>
+        <button
+          className="btn btn-primary"
+          type="submit"
+          disabled={loading || !gameId.trim() || !playerId}
+        >
           <FolderOpen size={14} />
           读取录像
         </button>
@@ -173,10 +186,13 @@ export function ReplayWorkspace({ active = true }: { active?: boolean }) {
                     : '已结束'}{' '}
                 · 原始视野记录
               </span>
-              {source === 'server' && (
+              {source === 'server' && playerId && (
                 <a
                   className="inline-flex items-center gap-1 text-teal hover:underline"
-                  href={`${replayAddress(replay.server, replay.gameId)}/download`}
+                  href={playerPath(
+                    `${replayAddress(replay.server, replay.gameId)}/download`,
+                    playerId,
+                  )}
                   download
                 >
                   <Download size={12} />

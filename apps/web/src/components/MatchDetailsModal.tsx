@@ -2,6 +2,7 @@ import { ArrowUpRight, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import type { MatchRecord } from '../../../../packages/contracts/src/index';
 import { localReplayHref, replayHref } from '../lib/format';
+import { usePlayerId } from '../hooks/PlayerScope';
 import { MatchDetails } from './MatchDetails';
 import { OutcomeBadge } from './OutcomeBadge';
 
@@ -12,6 +13,7 @@ export function MatchDetailsModal({
   match: MatchRecord | null;
   onClose: () => void;
 }) {
+  const playerId = usePlayerId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const matchId = match?.id;
 
@@ -34,7 +36,7 @@ export function MatchDetailsModal({
   }, [matchId]);
 
   if (!match) return null;
-  const localReplay = localReplayHref(match);
+  const localReplay = localReplayHref(match, playerId);
   const replay = replayHref(match.replayUrl);
 
   return (

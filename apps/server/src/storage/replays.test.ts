@@ -8,9 +8,9 @@ import { defaultConfig } from '../../../../packages/contracts/src/index.js';
 import { parseReplay } from '../../../../packages/contracts/src/replay.js';
 import { fixtureObservation, FixtureGame } from '../../../../test/fixtures/game.js';
 import { createApp } from '../app.js';
-import { Controller } from '../controller.js';
+import type { Controller } from '../controller.js';
 import type { GameConnection, GameEnd, GameFrame } from '../game/types.js';
-import { Repository } from './repository.js';
+import { PlayerManager } from '../player-manager.js';
 import { ReplayRecorder } from '../game/recorder.js';
 import { ReplayStore } from './replays.js';
 
@@ -70,20 +70,25 @@ describe('isolated replay storage', () => {
 
 const config = {
   ...defaultConfig,
-  server: 'bots',
   autopilot: false,
   command: process.execPath,
   args: [resolve('test/fixtures/pass-agent.mjs')],
 };
-function setup(game: GameConnection = new FixtureGame()) {
+async function setup(game: GameConnection = new FixtureGame()) {
   const dir = directory();
-  const repository = new Repository(dir);
-  const controller = new Controller(repository, resolve('.'), async () => game);
+  const manager = new PlayerManager(
+    dir,
+    resolve('.'),
+    async () => game,
+    async () => 'test player',
+  );
+  await manager.add({ server: 'bots', userId: 'test-account' });
+  const controller = manager.controller();
+  const repository = controller.repository;
   cleanups.push(async () => {
-    await controller.close();
-    repository.close();
+    await manager.close();
   });
-  return { dir, repository, controller };
+  return { dir: repository.dataDir, repository, controller, manager };
 }
 async function idle(controller: Controller) {
   if (!controller.active) return;
@@ -104,12 +109,12 @@ async function idle(controller: Controller) {
 
 describe('replay lifecycle and HTTP API without network games', () => {
   it('marks completed matches only after saving and exposes JSON/gzip with safe paths', async () => {
-    const { controller, repository } = setup();
+    const { controller, repository, manager } = await setup();
     controller.start(config);
     await idle(controller);
     const match = repository.matches().items[0]!;
     expect(match).toMatchObject({ outcome: 'won', localReplay: true });
-    const app = await createApp(controller, resolve('nonexistent-web'));
+    const app = await createApp(manager, resolve('nonexistent-web'));
     cleanups.push(() => app.close());
     const headers = { host: '127.0.0.1:3000' };
     const path = `/api/replays/bots/${match.gameId}`;
@@ -137,7 +142,7 @@ describe('replay lifecycle and HTTP API without network games', () => {
   });
 
   it('saves an interrupted game when agent startup fails', async () => {
-    const { controller, repository } = setup();
+    const { controller, repository } = await setup();
     controller.start({ ...config, command: '/nonexistent-replay-test-agent' });
     await idle(controller);
     const match = repository.matches().items[0]!;
@@ -164,7 +169,7 @@ describe('replay lifecycle and HTTP API without network games', () => {
         });
       }
     }
-    const { controller, repository } = setup(new WaitingGame());
+    const { controller, repository } = await setup(new WaitingGame());
     controller.start(config);
     await waiting;
     await controller.stop();
@@ -177,7 +182,7 @@ describe('replay lifecycle and HTTP API without network games', () => {
   });
 
   it.each([false, true])('records subprocess move decisions with dryRun=%s', async (dryRun) => {
-    const { controller, repository } = setup();
+    const { controller, repository } = await setup();
     controller.start({
       ...config,
       dryRun,
@@ -208,7 +213,7 @@ describe('replay lifecycle and HTTP API without network games', () => {
   });
 
   it('saves a distinct recording for each autopilot game', async () => {
-    const { controller, repository } = setup();
+    const { controller, repository } = await setup();
     controller.start({ ...config, autopilot: true, maxGames: 2, cooldownMs: 0 });
     await idle(controller);
     const matches = repository.matches().items;
@@ -223,7 +228,7 @@ describe('replay lifecycle and HTTP API without network games', () => {
   });
 
   it('logs a persistence failure without changing the completed result', async () => {
-    const { controller, repository } = setup();
+    const { controller, repository } = await setup();
     vi.spyOn(controller.replays, 'save').mockRejectedValue(new Error('disk unavailable'));
     controller.start(config);
     await idle(controller);
@@ -247,7 +252,7 @@ describe('replay lifecycle and HTTP API without network games', () => {
       submit: () => 'pass',
       close: () => {},
     };
-    const { controller, repository } = setup(game);
+    const { controller, repository } = await setup(game);
     controller.start(config);
     await idle(controller);
     expect(repository.matches().items[0]!.localReplay).not.toBe(true);

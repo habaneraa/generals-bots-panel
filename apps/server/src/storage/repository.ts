@@ -3,7 +3,6 @@ import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   defaultConfig,
-  runConfigSchema,
   type MatchFilters,
   type MatchPage,
   type MatchRecord,
@@ -32,28 +31,26 @@ export class Repository {
         'PRAGMA busy_timeout = 5000; PRAGMA locking_mode = EXCLUSIVE; PRAGMA journal_mode = WAL;',
       );
       const version = this.db.prepare('PRAGMA user_version').get()?.user_version;
-      if (version !== 0 && version !== 1 && version !== 2) {
+      if (version !== 0 && version !== 2) {
         throw new Error(`不支持的数据库版本：${String(version)}`);
       }
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, started_at TEXT NOT NULL, payload TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS matches (
-          id TEXT PRIMARY KEY, run_id TEXT NOT NULL, mode TEXT NOT NULL,
-          outcome TEXT, started_at TEXT NOT NULL, payload TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS matches_mode_time ON matches(mode, started_at DESC);
-        CREATE INDEX IF NOT EXISTS matches_run ON matches(run_id);
-      `);
-      const legacy =
-        version === 1
-          ? this.db.prepare('SELECT payload FROM settings WHERE id = 1').get()
-          : undefined;
-      const initial = legacy
-        ? runConfigSchema.parse(JSON.parse(String(legacy.payload)))
-        : defaultConfig;
-      this.config = new ConfigStore(this.dataDir, initial);
-      // Only remove legacy settings once their JSON replacement has been safely written.
-      this.db.exec('BEGIN; DROP TABLE IF EXISTS settings; PRAGMA user_version = 2; COMMIT;');
+      if (version === 0) {
+        if (this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").get())
+          throw new Error('不支持未标记版本的已有数据库');
+        this.db.exec(`
+          BEGIN;
+          CREATE TABLE runs (id TEXT PRIMARY KEY, started_at TEXT NOT NULL, payload TEXT NOT NULL);
+          CREATE TABLE matches (
+            id TEXT PRIMARY KEY, run_id TEXT NOT NULL, mode TEXT NOT NULL,
+            outcome TEXT, started_at TEXT NOT NULL, payload TEXT NOT NULL
+          );
+          CREATE INDEX matches_mode_time ON matches(mode, started_at DESC);
+          CREATE INDEX matches_run ON matches(run_id);
+          PRAGMA user_version = 2;
+          COMMIT;
+        `);
+      }
+      this.config = new ConfigStore(this.dataDir, defaultConfig);
       this.recoverInterrupted();
     } catch (error) {
       this.db.close();
@@ -78,19 +75,13 @@ export class Repository {
 
   latestRun(): RunRecord | null {
     const row = this.db
-      .prepare(
-        "SELECT payload FROM runs WHERE json_extract(payload, '$.config.mode') = 'live' ORDER BY started_at DESC, rowid DESC LIMIT 1",
-      )
+      .prepare('SELECT payload FROM runs ORDER BY started_at DESC, rowid DESC LIMIT 1')
       .get();
     return row ? (JSON.parse(String(row.payload)) as RunRecord) : null;
   }
 
   getRun(id: string): RunRecord | null {
-    const row = this.db
-      .prepare(
-        "SELECT payload FROM runs WHERE id = ? AND json_extract(payload, '$.config.mode') = 'live'",
-      )
-      .get(id);
+    const row = this.db.prepare('SELECT payload FROM runs WHERE id = ?').get(id);
     return row ? (JSON.parse(String(row.payload)) as RunRecord) : null;
   }
 
@@ -111,7 +102,7 @@ export class Repository {
   }
 
   private matchWhere(filters: MatchFilters) {
-    const conditions = ["mode = 'live'"];
+    const conditions = ['1 = 1'];
     const params: (string | number)[] = [];
     if (filters.server !== undefined) {
       conditions.push("json_extract(payload, '$.server') = ?");
@@ -204,7 +195,7 @@ export class Repository {
     const stats: Stats = { total: 0, won: 0, lost: 0, draw: 0, interrupted: 0, winRate: 0 };
     const rows = this.db
       .prepare(
-        "SELECT outcome, COUNT(*) AS n FROM matches WHERE mode = 'live' AND outcome IS NOT NULL GROUP BY outcome",
+        'SELECT outcome, COUNT(*) AS n FROM matches WHERE outcome IS NOT NULL GROUP BY outcome',
       )
       .all();
     for (const row of rows) {
@@ -223,6 +214,10 @@ export class Repository {
     return stats;
   }
 
+  runCount(): number {
+    return Number(this.db.prepare('SELECT COUNT(*) AS n FROM runs').get()?.n ?? 0);
+  }
+
   logPath(runId: string): string {
     // Only IDs already persisted by the controller can address a log file.
     if (!/^[\da-f-]{36}$/i.test(runId) || !this.getRun(runId)) {
@@ -235,16 +230,14 @@ export class Repository {
     const now = new Date().toISOString();
     this.db.exec('BEGIN');
     try {
-      for (const row of this.db
-        .prepare("SELECT payload FROM runs WHERE json_extract(payload, '$.config.mode') = 'live'")
-        .all()) {
+      for (const row of this.db.prepare('SELECT payload FROM runs').all()) {
         const run = JSON.parse(String(row.payload)) as RunRecord;
         if (!run.endedAt) {
           this.putRun({ ...run, endedAt: now, phase: 'failed', error: '服务重启，前次运行已中断' });
         }
       }
       for (const row of this.db
-        .prepare("SELECT payload FROM matches WHERE mode = 'live' AND outcome IS NULL")
+        .prepare('SELECT payload FROM matches WHERE outcome IS NULL')
         .all()) {
         const match = JSON.parse(String(row.payload)) as MatchRecord;
         this.putMatch({ ...match, endedAt: now, outcome: 'interrupted' });

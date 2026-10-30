@@ -9,24 +9,42 @@ import type {
   StarHistoryResponse,
 } from '../../../../packages/contracts/src/index.js';
 import { createApp } from '../app.js';
-import { Controller } from '../controller.js';
-import { Repository } from './repository.js';
+import { PlayerManager } from '../player-manager.js';
+import type { Repository } from './repository.js';
 
-const resources: { dir: string; repo: Repository; app?: FastifyInstance }[] = [];
+const resources: {
+  dir: string;
+  repo: Repository;
+  manager: PlayerManager;
+  app?: FastifyInstance;
+}[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
-  for (const { dir, repo, app } of resources.splice(0)) {
+  for (const { dir, manager, app } of resources.splice(0)) {
     try {
       await app?.close();
     } finally {
-      repo.close();
+      await manager.close();
       rmSync(dir, { recursive: true, force: true });
     }
   }
 });
-function fixture() {
+async function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'panel-star-history-'));
-  const resource: (typeof resources)[number] = { dir, repo: new Repository(dir) };
+  const manager = new PlayerManager(
+    dir,
+    dir,
+    async () => {
+      throw new Error('Network access is forbidden in storage tests');
+    },
+    async () => 'test player',
+  );
+  await manager.add({ server: 'bots', userId: 'test-account' });
+  const resource: (typeof resources)[number] = {
+    dir,
+    manager,
+    repo: manager.controller().repository,
+  };
   resources.push(resource);
   return resource;
 }
@@ -47,11 +65,8 @@ function match(id: string, overrides: Partial<MatchRecord> = {}): MatchRecord {
   };
 }
 async function apiFixture() {
-  const resource = fixture();
-  const controller = new Controller(resource.repo, resource.dir, async () => {
-    throw new Error('Network access is forbidden in star history tests');
-  });
-  resource.app = await createApp(controller, join(resource.dir, 'no-web'));
+  const resource = await fixture();
+  resource.app = await createApp(resource.manager, join(resource.dir, 'no-web'));
   return { ...resource, app: resource.app };
 }
 const headers = { host: 'localhost:3000' };
@@ -88,8 +103,8 @@ describe('lightweight star history', () => {
     expect(secondPage.json().items[0].id).toBe('match-14');
   });
 
-  it('retains missing, null and empty ratings and orders timestamp ties by insertion', () => {
-    const { repo } = fixture();
+  it('retains missing, null and empty ratings and orders timestamp ties by insertion', async () => {
+    const { repo } = await fixture();
     repo.putMatch(match('missing', { endedAt: null }));
     repo.putMatch({ ...match('null'), rating: null } as unknown as MatchRecord);
     repo.putMatch({ ...match('empty'), rating: {} } as MatchRecord);
@@ -211,8 +226,8 @@ describe('lightweight star history', () => {
     { minTurns: 0, maxTurns: 0 },
     { minTurns: 2 },
     { maxTurns: 3 },
-  ])('uses identical filter semantics to paginated matches for %j', (filters) => {
-    const { repo } = fixture();
+  ])('uses identical filter semantics to paginated matches for %j', async (filters) => {
+    const { repo } = await fixture();
     const outcomes = ['won', 'lost', 'draw', 'interrupted', null] as const;
     outcomes.forEach((outcome, index) =>
       repo.putMatch(
@@ -234,8 +249,8 @@ describe('lightweight star history', () => {
     );
   });
 
-  it('returns an empty response for an empty repository or no matching records', () => {
-    const { repo } = fixture();
+  it('returns an empty response for an empty repository or no matching records', async () => {
+    const { repo } = await fixture();
     expect(repo.starHistory()).toEqual({ items: [] });
     repo.putMatch(match('other'));
     expect(repo.starHistory({ opponent: 'absent' })).toEqual({ items: [] });

@@ -1,6 +1,7 @@
 import type { Replay, ReplaySubmitStatus } from '../../../../packages/contracts/src/replay.js';
 import type {
   RunConfig,
+  Player as PanelPlayer,
   Outcome,
   MatchSnapshot,
   MatchRating,
@@ -74,7 +75,7 @@ export interface GameConnection {
   submit(frame: GameFrame, action: AgentAction): SubmitStatus;
   close(): void;
 }
-export type GameFactory = (config: RunConfig) => Promise<GameConnection>;
+export type GameFactory = (config: RunConfig, player: PanelPlayer) => Promise<GameConnection>;
 export function isGameEnd(value: GameFrame | GameEnd): value is GameEnd {
   return 'outcome' in value;
 }

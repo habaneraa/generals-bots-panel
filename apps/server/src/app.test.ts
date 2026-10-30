@@ -4,14 +4,12 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
-import { Controller } from './controller.js';
-import { Repository } from './storage/repository.js';
+import { PlayerManager } from './player-manager.js';
 
-const resources: { app: FastifyInstance; repository: Repository; dir: string }[] = [];
+const resources: { app: FastifyInstance; manager: PlayerManager; dir: string }[] = [];
 afterEach(async () => {
-  for (const { app, repository, dir } of resources.splice(0)) {
+  for (const { app, dir } of resources.splice(0)) {
     await app.close();
-    repository.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -21,10 +19,9 @@ async function setup(port?: number) {
   const webDir = join(dir, 'web');
   mkdirSync(webDir);
   writeFileSync(join(webDir, 'index.html'), '<html>panel shell</html>');
-  const repository = new Repository(join(dir, 'data'));
-  const controller = new Controller(repository, dir);
-  const app = await createApp(controller, webDir, port);
-  resources.push({ app, repository, dir });
+  const manager = new PlayerManager(join(dir, 'data'), dir, undefined, async () => 'test player');
+  const app = await createApp(manager, webDir, port);
+  resources.push({ app, manager, dir });
   await app.ready();
   return { app, webDir };
 }
