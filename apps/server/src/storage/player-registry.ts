@@ -1,16 +1,7 @@
-import { randomUUID } from 'node:crypto';
-import {
-  closeSync,
-  fsyncSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { playerInputSchema } from '../../../../packages/contracts/src/index.js';
+import { writeJsonAtomic } from './atomic-json.js';
 
 export const registrySchema = z
   .object({
@@ -46,24 +37,5 @@ export function readRegistry(path: string): PlayerRegistry | null {
 }
 
 export function writeRegistry(path: string, registry: PlayerRegistry): void {
-  const value = registrySchema.parse(registry);
-  const temporary = join(dirname(path), `.players-${randomUUID()}.tmp`);
-  try {
-    const fd = openSync(temporary, 'wx', 0o600);
-    try {
-      writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`);
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-    renameSync(temporary, path);
-  } catch (error) {
-    try {
-      unlinkSync(temporary);
-    } catch (cleanupError) {
-      if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT')
-        throw new AggregateError([error, cleanupError], '保存 Player 注册表失败');
-    }
-    throw error;
-  }
+  writeJsonAtomic(path, registrySchema.parse(registry), { sync: true });
 }

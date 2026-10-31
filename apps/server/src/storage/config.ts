@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { runConfigSchema, type RunConfig } from '../../../../packages/contracts/src/index.js';
+import { writeJsonAtomic } from './atomic-json.js';
 
-/** Human-readable settings; replace atomically so an interrupted save cannot truncate them. */
+// 使用原子替换，避免中断保存后丢失上一次仍可用的运行参数。
 export class ConfigStore {
   readonly path: string;
   private config: RunConfig;
@@ -30,20 +30,7 @@ export class ConfigStore {
 
   save(value: RunConfig): void {
     const config = runConfigSchema.parse(value);
-    const temporary = join(dirname(this.path), `.config-${randomUUID()}.tmp`);
-    try {
-      writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
-      renameSync(temporary, this.path);
-    } catch (error) {
-      try {
-        unlinkSync(temporary);
-      } catch (cleanupError) {
-        if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') {
-          throw new AggregateError([error, cleanupError], '保存参数及清理临时文件失败');
-        }
-      }
-      throw error;
-    }
+    writeJsonAtomic(this.path, config);
     this.config = structuredClone(config);
   }
 }
