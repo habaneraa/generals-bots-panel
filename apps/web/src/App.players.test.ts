@@ -144,6 +144,26 @@ afterEach(async () => {
 });
 
 describe('Player workspaces', () => {
+  it('keeps each navigation tab and panel linked in both directions', async () => {
+    await render();
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const panels = [...container.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+
+    expect(panels).toHaveLength(tabs.length);
+    expect(new Set(tabs.map((tab) => tab.id)).size).toBe(tabs.length);
+    expect(new Set(panels.map((panel) => panel.id)).size).toBe(panels.length);
+    for (const tab of tabs) {
+      const panelId = tab.getAttribute('aria-controls');
+      const matches = panels.filter((panel) => panel.id === panelId);
+      expect(matches).toHaveLength(1);
+      expect(matches[0]!.getAttribute('aria-labelledby')).toBe(tab.id);
+    }
+    for (const panel of panels) {
+      const tabId = panel.getAttribute('aria-labelledby');
+      expect(tabs.filter((tab) => tab.id === tabId)).toHaveLength(1);
+    }
+  });
+
   it('guides an empty registry without rendering start controls or issuing unscoped data requests', async () => {
     model = {
       ...model,
