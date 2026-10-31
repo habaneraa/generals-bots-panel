@@ -555,6 +555,30 @@ describe('server nickname cache lifecycle', () => {
     expect(offline.dashboard().player!.nickname).toBe('renamed on server');
   });
 
+  it('keeps the cached nickname and logs its cause when persistence fails', async () => {
+    const { manager } = setup();
+    const player = (await manager.add(input)).player!;
+    const failure = new Error('registry disk unavailable');
+    vi.spyOn(
+      manager as unknown as { persist(registry: PlayerRegistry): void },
+      'persist',
+    ).mockImplementationOnce(() => {
+      throw failure;
+    });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const updateNickname = (
+      manager as unknown as {
+        updateNickname(playerId: string, nickname: string): void;
+      }
+    ).updateNickname;
+
+    updateNickname.call(manager, player.id, 'new server nickname');
+
+    expect(manager.players[0]!.nickname).toBe(player.nickname);
+    expect(persisted(manager).players[0]!.nickname).toBe(player.nickname);
+    expect(log).toHaveBeenCalledWith('无法持久化 Player 昵称缓存，已保留原缓存', failure);
+  });
+
   it.each(['delete', 'close'] as const)('discards late startup refresh after %s', async (mode) => {
     const { manager, dir } = setup();
     const player = (await manager.add(input)).player!;
@@ -784,6 +808,32 @@ describe('local Player deletion', () => {
     manager.controller(a.id).saveConfig(defaultConfig);
     await manager.remove(a.id);
     expect(manager.players).toEqual([b]);
+  });
+
+  it('warns with the cleanup cause after committed Player deletion', async () => {
+    const { manager, dir } = setup();
+    const player = (await manager.add(input)).player!;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const trash = join(dir, '.player-trash');
+    const unsubscribe = manager.subscribe(() => {
+      if (manager.players.some((entry) => entry.id === player.id)) return;
+      const [name] = readdirSync(trash);
+      if (name) renameSync(join(trash, name), join(trash, `held-${name}`));
+    });
+
+    let result: Dashboard;
+    try {
+      result = await manager.remove(player.id);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(result!.player).toBeNull();
+    expect(manager.players).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      'Player 已删除，但内部回收目录清理失败',
+      expect.objectContaining({ code: 'ENOENT' }),
+    );
   });
 
   it('signals deleted pinned SSE streams and only updates player lists on other streams', async () => {

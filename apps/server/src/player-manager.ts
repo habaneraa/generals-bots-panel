@@ -291,8 +291,8 @@ export class PlayerManager {
       verifyDirectory(join(this.dataDir, '.player-trash'));
       verifyDirectory(staged!);
       rmSync(staged!, { recursive: true });
-    } catch {
-      console.error('Player 已删除，但内部回收目录清理失败');
+    } catch (error) {
+      console.warn('Player 已删除，但内部回收目录清理失败', error);
     }
     return this.dashboard(
       workspaceId && this.controllers.has(workspaceId) ? workspaceId : undefined,
@@ -354,8 +354,8 @@ export class PlayerManager {
       });
       this.controllers.get(playerId)!.player.nickname = nickname;
       this.notify();
-    } catch {
-      console.error('无法持久化 Player 昵称缓存，已保留原缓存');
+    } catch (error) {
+      console.error('无法持久化 Player 昵称缓存，已保留原缓存', error);
     }
   }
 
