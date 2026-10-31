@@ -51,7 +51,17 @@ export class ReplayStore {
       await writeFile(temporary, packed, { mode: 0o600, flag: 'wx' });
       await rename(temporary, path);
     } catch (error) {
-      await unlink(temporary).catch(() => undefined);
+      try {
+        await unlink(temporary);
+      } catch (cleanupError) {
+        // 清理失败可能留下含对局信息的临时文件，保留两个错误便于定位。
+        if ((cleanupError as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw new AggregateError(
+            [error, cleanupError],
+            `保存录像及清理临时文件失败：${String(error)}；${String(cleanupError)}`,
+          );
+        }
+      }
       throw error;
     }
   }
