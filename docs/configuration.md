@@ -48,7 +48,7 @@ Player 的服务器与 User ID 字符串独立于运行配置，`<server, userId
 - 游戏事件使用内存替身，外部 agent 使用[测试夹具](../test/fixtures/pass-agent.mjs)及 Node 子进程；不会读取真实账号或自动发起联网对局。
 - 前端交互测试按需使用 Happy DOM，不增加另一套生产配置。
 - [CI](../.github/workflows/ci.yml)使用 Node.js 24、`npm ci`、完整检查和生产构建；[锁文件](../package-lock.json)固定实际安装版本与完整性。仅使用已安装依赖通过检查，不等同于验证干净安装或所有镜像的可用性。
-- [旧 Python 目录](../browser_agent/README.md)不属于当前测试入口；不要把其 `unittest discover` 当作本项目验证命令。旧入口测试仍调用现已改为面板启动器的根脚本，可能误启动服务或访问默认数据目录。
+- [旧 Python 目录](../browser_agent/README.md)及其历史测试不属于当前测试入口；不要把其中的 `unittest discover` 当作本项目验证命令。现行项目只通过仓库根目录的 npm 脚本验证。
 
 ```bash
 npm run check
