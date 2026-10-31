@@ -1,6 +1,6 @@
 import { gzipSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
-import type { Replay } from '../../../../packages/contracts/src/replay';
+import { MAX_REPLAY_BYTES, type Replay } from '../../../../packages/contracts/src/replay';
 import { readReplayFile } from './model';
 
 function sample(): Replay {
@@ -56,7 +56,7 @@ describe('browser-local replay file import', () => {
     ).rejects.toThrow();
   });
   it('checks compressed input size before reading or allocating it', async () => {
-    const file = { size: 64 * 1024 * 1024 + 1 } as File;
+    const file = { size: MAX_REPLAY_BYTES + 1 } as File;
     await expect(readReplayFile(file)).rejects.toThrow('64 MiB');
   });
   it('releases the reader when the input stream fails', async () => {

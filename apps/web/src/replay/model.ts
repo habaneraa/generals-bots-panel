@@ -1,4 +1,5 @@
 import {
+  MAX_REPLAY_BYTES,
   parseReplay,
   type Replay,
   type ReplayAction,
@@ -80,8 +81,7 @@ export function elapsed(ms: number): string {
 }
 
 export async function readReplayFile(file: File, signal?: AbortSignal): Promise<Replay> {
-  const limit = 64 * 1024 * 1024;
-  if (file.size > limit) throw new Error('录像文件不能超过 64 MiB');
+  if (file.size > MAX_REPLAY_BYTES) throw new Error('录像文件不能超过 64 MiB');
   signal?.throwIfAborted();
   const magic = new Uint8Array(await file.slice(0, 2).arrayBuffer());
   signal?.throwIfAborted();
@@ -105,7 +105,7 @@ export async function readReplayFile(file: File, signal?: AbortSignal): Promise<
       signal?.throwIfAborted();
       if (done) break;
       size += value.byteLength;
-      if (size > limit) throw new Error('解压后的录像不能超过 64 MiB');
+      if (size > MAX_REPLAY_BYTES) throw new Error('解压后的录像不能超过 64 MiB');
       text += decoder.decode(value, { stream: true });
     }
     text += decoder.decode();
