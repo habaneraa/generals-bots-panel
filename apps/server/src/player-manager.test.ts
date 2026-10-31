@@ -28,6 +28,7 @@ import type { NicknameLookup } from './game/username.js';
 import type { GameConnection, GameFactory } from './game/types.js';
 import { ReplayRecorder } from './game/recorder.js';
 import { RunLog } from './storage/logs.js';
+import { Repository } from './storage/repository.js';
 
 const cleanups: Array<() => void | Promise<void>> = [];
 afterEach(async () => {
@@ -808,6 +809,43 @@ describe('local Player deletion', () => {
     manager.controller(a.id).saveConfig(defaultConfig);
     await manager.remove(a.id);
     expect(manager.players).toEqual([b]);
+  });
+
+  it('continues failed-Player rollback and retains the persistence and cleanup errors', async () => {
+    const { manager, dir } = setup();
+    const persistError = new Error('registry unavailable');
+    const closeError = new Error('repository close failed');
+    const directoryError = new Error('player directory unavailable');
+    const closeRepository = Repository.prototype.close;
+    vi.spyOn(Repository.prototype, 'close').mockImplementationOnce(function (this: Repository) {
+      closeRepository.call(this);
+      throw closeError;
+    });
+    const paths = manager as unknown as {
+      playerDirectory(playerId: string, create?: boolean): string;
+    };
+    const resolvePlayerDirectory = paths.playerDirectory.bind(manager);
+    const playerDirectory = vi.spyOn(paths, 'playerDirectory').mockImplementation((id, create) => {
+      if (!create) throw directoryError;
+      return resolvePlayerDirectory(id, create);
+    });
+    vi.spyOn(
+      manager as unknown as { persist(registry: PlayerRegistry): void },
+      'persist',
+    ).mockImplementationOnce(() => {
+      throw persistError;
+    });
+
+    const failure = await manager.add(input).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([persistError, closeError, directoryError]);
+    expect((failure as AggregateError).cause).toBe(persistError);
+    expect(playerDirectory).toHaveBeenCalledTimes(2);
+    const [playerId] = readdirSync(join(dir, 'players'));
+    expect(playerId).toBeDefined();
+    expect(() => manager.controller(playerId!)).toThrow('Player 不存在');
+    expect(manager.players).toEqual([]);
   });
 
   it('warns with the cleanup cause after committed Player deletion', async () => {

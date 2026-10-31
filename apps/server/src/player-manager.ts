@@ -204,8 +204,25 @@ export class PlayerManager {
       });
     } catch (error) {
       this.controllers.delete(player.id);
-      controller.repository.close();
-      rmSync(this.playerDirectory(player.id), { recursive: true });
+      // 注册表未提交，关闭仓库与删除目录都需尝试；清理故障不能遮蔽持久化根因。
+      const cleanupErrors: unknown[] = [];
+      try {
+        controller.repository.close();
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      try {
+        rmSync(this.playerDirectory(player.id), { recursive: true });
+      } catch (cleanupError) {
+        cleanupErrors.push(cleanupError);
+      }
+      if (cleanupErrors.length) {
+        throw new AggregateError(
+          [error, ...cleanupErrors],
+          `Player 创建失败且回滚清理不完整：${player.id}`,
+          { cause: error },
+        );
+      }
       throw error;
     }
     this.notify();
