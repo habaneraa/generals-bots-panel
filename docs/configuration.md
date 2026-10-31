@@ -36,7 +36,7 @@ PORT=3100 DATA_DIR=/绝对路径/panel-data npm start
 
 Player 的服务器与 User ID 字符串独立于运行配置，`<server, userId>` 唯一标识账号。通过左下角浮窗新增、切换或删除 Player；新增只提交服务器和 User ID，昵称必须由服务器 `get_username` 返回并持久缓存，不接受手工昵称。查询昵称不会加入对局，失败不创建账号；已有缓存会在启动时后台刷新及游戏连接成功时更新，查询失败不清空有效缓存。User ID 默认隐藏，但不是加密存储。Player 注册信息与上次选择保存在数据目录的注册表中，每个 Player 有独立的运行参数、历史、日志和录像库。删除前会弹出包含身份、运行状态和数据量的警告确认；运行中不可删除，确认只删除本地 Player 及其全部数据，不影响远端游戏账号。
 
-表单和历史快照使用[共享运行参数 schema](../packages/contracts/src/index.ts)，由[配置存储](../apps/server/src/storage/config.ts)校验并原子写入。运行参数不含 `server`、`userId` 或 `userIdFile`；环境变量仅配置面板进程，不覆盖 agent 的运行参数。
+表单和历史快照使用[共享运行参数 schema](../packages/contracts/src/index.ts)，由[配置存储](../apps/server/src/storage/config.ts)校验并原子写入。配置与 Player 注册表共用[内部 JSON 写入函数](../apps/server/src/storage/atomic-json.ts)，保持同目录临时文件、0600 权限和原子替换；注册表继续在替换前执行 `fsync`，运行配置不增加同步落盘步骤。替换成功后才更新配置缓存；写入或替换失败时保留旧文件，清理失败时保留原始与清理异常。运行参数不含 `server`、`userId` 或 `userIdFile`；环境变量仅配置面板进程，不覆盖 agent 的运行参数。
 
 每个 Player 加载自己的 JSON 配置，新账号使用 schema 默认值。只支持当前 Player 注册表与数据库格式：不读取旧单玩家根配置或账号文件，不迁移旧 SQLite settings，不自动兼容旧版本。无效 JSON、缺失 Player 数据或不支持的数据库版本明确报错，不静默回退或将历史归给其他账号。运行时修改参数需要先停止该 Player 的 agent；历史中的配置保持为当次运行快照。
 
