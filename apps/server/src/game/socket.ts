@@ -35,37 +35,26 @@ export class GameSocket {
     if (signal.aborted) return Promise.reject(abortError(signal));
     if (this.failure) return Promise.reject(this.failure);
     if (this.socket) return Promise.reject(new Error('Game socket already started'));
-    return new Promise<void>((resolve, reject) => {
-      const abort = () => this.fail(abortError(signal));
-      const timeout = setTimeout(
-        () => this.fail(new Error('Game socket connection timed out')),
-        15_000,
-      );
-      const cleanup = () => {
-        clearTimeout(timeout);
-        signal.removeEventListener('abort', abort);
-        this.connection = null;
-      };
-      this.connection = {
-        resolve: () => {
-          cleanup();
-          resolve();
-        },
-        reject: (error) => {
-          cleanup();
-          reject(error);
-        },
-      };
-      signal.addEventListener('abort', abort, { once: true });
-      try {
-        this.socket = new WebSocket(this.endpoint);
-        this.socket.addEventListener('message', this.onMessage);
-        this.socket.addEventListener('error', this.onError);
-        this.socket.addEventListener('close', this.onClose);
-      } catch {
-        this.fail(new Error('Unable to create game WebSocket'));
-      }
-    });
+    const connection = this.waitForPending<void>(
+      signal,
+      15_000,
+      'Game socket connection timed out',
+      (pending) => {
+        this.connection = pending;
+        return () => {
+          this.connection = null;
+        };
+      },
+    );
+    try {
+      this.socket = new WebSocket(this.endpoint);
+      this.socket.addEventListener('message', this.onMessage);
+      this.socket.addEventListener('error', this.onError);
+      this.socket.addEventListener('close', this.onClose);
+    } catch {
+      this.fail(new Error('Unable to create game WebSocket'));
+    }
+    return connection;
   }
 
   emit(event: string, ...args: unknown[]): void {
@@ -77,21 +66,44 @@ export class GameSocket {
     if (this.failure) return Promise.reject(this.failure);
     if (!this.connected) return Promise.reject(new Error('Game socket is not connected'));
     const id = ++this.sequence;
-    return new Promise<unknown[]>((resolve, reject) => {
+    const request = this.waitForPending<unknown[]>(
+      signal,
+      10_000,
+      'Game socket acknowledgment timed out',
+      (pending) => {
+        this.requests.set(id, pending);
+        return () => {
+          this.requests.delete(id);
+        };
+      },
+    );
+    try {
+      this.send('42' + id + JSON.stringify([event, ...args]));
+    } catch (error) {
+      this.fail(error instanceof Error ? error : new Error('Unable to send game request'));
+    }
+    return request;
+  }
+
+  private waitForPending<T>(
+    signal: AbortSignal,
+    timeoutMs: number,
+    timeoutMessage: string,
+    register: (pending: Pending<T>) => () => void,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
       const abort = () => this.fail(abortError(signal));
-      const timeout = setTimeout(
-        () => this.fail(new Error('Game socket acknowledgment timed out')),
-        10_000,
-      );
+      const timeout = setTimeout(() => this.fail(new Error(timeoutMessage)), timeoutMs);
+      let cleanupPending = () => {};
       const cleanup = () => {
         clearTimeout(timeout);
         signal.removeEventListener('abort', abort);
-        this.requests.delete(id);
+        cleanupPending();
       };
-      this.requests.set(id, {
-        resolve: (reply) => {
+      cleanupPending = register({
+        resolve: (value) => {
           cleanup();
-          resolve(reply);
+          resolve(value);
         },
         reject: (error) => {
           cleanup();
@@ -99,11 +111,6 @@ export class GameSocket {
         },
       });
       signal.addEventListener('abort', abort, { once: true });
-      try {
-        this.send('42' + id + JSON.stringify([event, ...args]));
-      } catch (error) {
-        this.fail(error instanceof Error ? error : new Error('Unable to send game request'));
-      }
     });
   }
 
