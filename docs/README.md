@@ -22,6 +22,7 @@
 ## 历史归档
 
 - [2026-10-31 可维护性与代码质量改进报告](reports/2026-10-31-maintainability.md)：原子 JSON 保存、录像故障诊断与表单校验任务清理的工作快照。
+- [2026-10-31 可维护性改进补充报告](reports/2026-10-31-maintainability-followup.md)：归档入口测试、JSONL 崩溃续写、HTTP 错误边界与导航可访问性回归。
 - [2026-10-27 可维护性与质量改进报告](reports/2026-10-27-maintainability.md)：边界保护、直接回归测试与录像失败清理的工作快照。
 - [2026-10-25 可维护性重构报告](reports/2026-10-25-maintainability.md)：该日工作的范围与验证快照，不作为未来配置的依据。
 - [旧 Python 实现](../browser_agent/README.md)与[旧启动示例](../browser_agent/run.md)：原地保留的历史参考，不属于当前应用入口、依赖或测试范围。不要按旧示例启动当前项目。
