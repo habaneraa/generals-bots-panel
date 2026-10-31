@@ -2,10 +2,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { GameSocket, abortError } from './socket.js';
 import { GameState } from './state.js';
 import { fetchDuelStars } from './ratings.js';
+import { gameEndpoint, validNickname } from './username.js';
 import { ReplayRecorder } from './recorder.js';
 import { frameIdentity, isGameEnd } from './types.js';
 import type { AgentAction, GameConnection, GameEnd, GameFrame, SubmitStatus } from './types.js';
-import { gameEndpoint, validNickname } from './username.js';
 
 // Public client v31.4.3 queue argument, not an account credential.
 const CLIENT_KEY = 'sd09fjdZ03i0ejwi_changeme';
@@ -63,16 +63,22 @@ export class SocketGame implements GameConnection {
               } catch {
                 this.recorder.truncate('本地录像采集失败，已保留有效前缀');
               }
-              const view = frame.observation;
+            }
+            if ((!frame || !isGameEnd(frame)) && !this.closed && !this.surrenderRequested) {
+              const snapshot = frame?.snapshot ?? this.state.getSnapshot()?.snapshot;
+              const me = snapshot?.players.find((player) => player.isSelf);
+              const enemy = snapshot?.players.find((player) => !player.isSelf);
               if (
-                !this.closed &&
-                !this.surrenderRequested &&
-                (view.my_army * 100 < view.opp_army || view.my_land * 100 < view.opp_land)
+                me?.army != null &&
+                me.land !== null &&
+                enemy?.army != null &&
+                enemy.land !== null &&
+                (me.army * 100 < enemy.army || me.land * 100 < enemy.land)
               ) {
                 this.surrenderRequested = true;
                 this.socket.emit('surrender');
                 this.log?.(
-                  `自动投降：兵力 ${view.my_army}/${view.opp_army}，领地 ${view.my_land}/${view.opp_land}，低于敌方的 1%`,
+                  `自动投降：兵力 ${me.army}/${enemy.army}，领地 ${me.land}/${enemy.land}，低于敌方的 1%`,
                 );
               }
             }
@@ -345,7 +351,7 @@ export class SocketGame implements GameConnection {
           if (this.failure) throw this.failure;
           if (this.closed) throw new Error('Game connection closed');
           const value = select();
-          if (value) {
+          if (value && (!this.surrenderRequested || isGameEnd(value))) {
             if (!isGameEnd(value)) this.recorder.bindFrame(value);
             cleanup();
             resolve(value);

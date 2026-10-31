@@ -155,11 +155,67 @@ describe('automatic surrender outside the agent process', () => {
     game.close();
   });
 
-  it('also checks the opening frame', async () => {
-    socket.openingArmy = 9;
-    const { game } = await connected();
+  it.each([0, 1])(
+    'checks complete scores without waiting for a map or playable turn (%i)',
+    async (turn) => {
+      const game = new SocketGame('bots', 'private-account-id');
+      await game.connect(new AbortController().signal);
+      socket.event!('game_start', [
+        {
+          game_type: '1v1',
+          replay_id: 'score-only-game',
+          playerIndex: 0,
+          usernames: ['self', 'enemy'],
+          turn,
+          scores: [
+            { i: 0, tiles: 19, total: 24 },
+            { i: 1, tiles: 346, total: 2866 },
+          ],
+        },
+      ]);
+      expect(game.getSnapshot()?.snapshot.map).toBeNull();
+      expect(surrenders()).toEqual([['surrender']]);
+      game.close();
+    },
+  );
+
+  it('waits for both scores instead of treating an unknown score as zero', async () => {
+    const game = new SocketGame('bots', 'private-account-id');
+    await game.connect(new AbortController().signal);
+    socket.event!('game_start', [
+      {
+        game_type: '1v1',
+        replay_id: 'partial-score-game',
+        playerIndex: 0,
+        usernames: ['self', 'enemy'],
+        scores: [{ i: 1, tiles: 346, total: 2866 }],
+      },
+    ]);
+    expect(surrenders()).toEqual([]);
+    update(24, 2866, 19, 346);
     expect(surrenders()).toEqual([['surrender']]);
     game.close();
+  });
+
+  it('waits for the terminal result when the opening frame triggers surrender', async () => {
+    socket.openingArmy = 9;
+    const game = new SocketGame('bots', 'private-account-id');
+    const signal = new AbortController().signal;
+    await game.connect(signal);
+    const received = vi.fn();
+    const pending = game.join(signal).then(received);
+    try {
+      expect(surrenders()).toEqual([['surrender']]);
+      await Promise.resolve();
+      expect(received).not.toHaveBeenCalled();
+    } finally {
+      socket.event!('game_lost', []);
+      await pending;
+      game.close();
+    }
+    expect(received).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: 'lost', endReason: 'game_lost' }),
+    );
   });
 
   it('sends once per game and waits for the server to confirm the loss', async () => {
@@ -176,11 +232,42 @@ describe('automatic surrender outside the agent process', () => {
     game.close();
   });
 
-  it('rejects attacks after surrender while the server result is pending', async () => {
-    const { game, signal } = await connected();
-    update(1, 101, 1, 1);
-    const frame = await game.next(0, signal);
-    if (isGameEnd(frame)) throw new Error('Expected pending server result');
+  it.each(['before', 'after'] as const)(
+    'waits for the terminal result when next() starts %s surrender',
+    async (timing) => {
+      const { game, signal } = await connected();
+      const received = vi.fn();
+      if (timing === 'after') update(24, 2866, 19, 346);
+      const pending = game.next(0, signal).then(received);
+      try {
+        if (timing === 'before') update(24, 2866, 19, 346);
+        await Promise.resolve();
+        socket.event!('game_update', [{ turn: 3, attackIndex: 100 }]);
+        await Promise.resolve();
+        expect(received).not.toHaveBeenCalled();
+        expect(surrenders()).toEqual([['surrender']]);
+      } finally {
+        socket.event!('game_lost', []);
+        await pending;
+        game.close();
+      }
+      expect(received).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ outcome: 'lost', endReason: 'game_lost' }),
+      );
+    },
+  );
+
+  it('rejects an in-flight decision even when surrender arrives on the same turn', async () => {
+    const { game, frame } = await connected();
+    socket.event!('game_update', [
+      {
+        turn: 1,
+        scores: [
+          { i: 0, tiles: 19, total: 24 },
+          { i: 1, tiles: 346, total: 2866 },
+        ],
+      },
+    ]);
     expect(
       game.submit(frame, { pass: false, row: 0, col: 0, direction: 3, split: false, value: null }),
     ).toBe('rejected');
@@ -188,13 +275,51 @@ describe('automatic surrender outside the agent process', () => {
     game.close();
   });
 
-  it('still checks scores while an earlier attack is awaiting acknowledgment', async () => {
-    const { game, frame } = await connected();
+  it('times out an unconfirmed surrender instead of feeding normal turns to the agent', async () => {
+    vi.useFakeTimers();
+    const { game, signal } = await connected();
+    try {
+      update(24, 2866, 19, 346);
+      const pending = game.next(0, signal).then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      for (let turn = 3; turn <= 10; turn++) {
+        socket.event!('game_update', [{ turn }]);
+        await vi.advanceTimersByTimeAsync(5_000);
+      }
+      expect(await pending).toEqual({ error: new Error('Timed out waiting for game state') });
+      expect(surrenders()).toEqual([['surrender']]);
+    } finally {
+      game.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it('allows cancellation while waiting for a surrender confirmation', async () => {
+    const { game } = await connected();
+    const abort = new AbortController();
+    update(24, 2866, 19, 346);
+    const pending = game.next(0, abort.signal).then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    const reason = new Error('cancel surrender wait');
+    abort.abort(reason);
+    expect(await pending).toEqual({ error: reason });
+    game.close();
+  });
+
+  it('accepts the surrender result even when an earlier attack is never acknowledged', async () => {
+    const { game, frame, signal } = await connected();
     expect(
       game.submit(frame, { pass: false, row: 0, col: 0, direction: 3, split: false, value: null }),
     ).toBe('sent');
-    update(1, 101, 1, 1);
+    const pending = game.next(0, signal);
+    update(24, 2866, 19, 346);
     expect(surrenders()).toEqual([['surrender']]);
+    socket.event!('game_lost', []);
+    expect(await pending).toMatchObject({ outcome: 'lost', endReason: 'game_lost' });
     game.close();
   });
 
