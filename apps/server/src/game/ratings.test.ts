@@ -3,7 +3,10 @@ import { Agent } from 'undici';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchDuelStars } from './ratings.js';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 describe('public rating metadata without network', () => {
   it.each([0, 12.5, '0', '12.5', '83.876173960723037', ' 84.117323068167025 '])(
     'parses a real star value %s and encodes usernames',
@@ -39,9 +42,36 @@ describe('public rating metadata without network', () => {
     expect(await fetchDuelStars('player', new AbortController().signal)).toBe(12.5);
     expect(request).toHaveBeenCalledTimes(2);
   });
-  it('ignores lookup failure without affecting a game', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
-    expect(await fetchDuelStars('player', new AbortController().signal)).toBeNull();
+  it.each(['timeout', 'rate-limit', 'server-error'] as const)(
+    'accepts a successful fifth attempt after %s failures',
+    async (failure) => {
+      vi.useFakeTimers();
+      const request = vi.spyOn(globalThis, 'fetch');
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        if (failure === 'timeout') {
+          request.mockRejectedValueOnce(new DOMException('timed out', 'TimeoutError'));
+        } else {
+          request.mockResolvedValueOnce(
+            new Response('', { status: failure === 'rate-limit' ? 429 : 503 }),
+          );
+        }
+      }
+      request.mockResolvedValueOnce(Response.json({ stars: { duel: 12.5 } }));
+      const pending = fetchDuelStars('player', new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(1750);
+      expect(request).toHaveBeenCalledTimes(4);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(await pending).toBe(12.5);
+      expect(request).toHaveBeenCalledTimes(5);
+    },
+  );
+  it('ignores lookup failure after five attempts without affecting a game', async () => {
+    vi.useFakeTimers();
+    const request = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+    const pending = fetchDuelStars('player', new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(3750);
+    expect(await pending).toBeNull();
+    expect(request).toHaveBeenCalledTimes(5);
   });
   it('retries rate limits and server errors', async () => {
     const request = vi
@@ -74,13 +104,13 @@ describe('public rating metadata without network', () => {
     expect(await fetchDuelStars('player', new AbortController().signal, debug)).toBe(
       83.876173960723037,
     );
-    expect(debug).toHaveBeenCalledWith('request attempt=1 timeoutMs=8000 addressAttemptMs=2000');
+    expect(debug).toHaveBeenCalledWith('request attempt=1 timeoutMs=30000 addressAttemptMs=2000');
     expect(debug).toHaveBeenCalledWith(expect.stringContaining('status=200 elapsedMs='));
     expect(debug).toHaveBeenCalledWith('parsed stars.duel type=string value="83.876173960723037"');
     expect(debug).toHaveBeenCalledWith(expect.stringContaining('reason=ok'));
   });
 
-  it('uses an isolated dispatcher and an eight-second request budget without changing global connection settings', async () => {
+  it('uses an isolated dispatcher and a thirty-second request budget without changing global connection settings', async () => {
     const globalTimeout = getDefaultAutoSelectFamilyAttemptTimeout();
     const timeout = vi.spyOn(AbortSignal, 'timeout');
     const request = vi
@@ -88,7 +118,7 @@ describe('public rating metadata without network', () => {
       .mockResolvedValue(Response.json({ stars: { duel: '84.6' } }));
     expect(await fetchDuelStars('player', new AbortController().signal)).toBe(84.6);
     expect(request.mock.calls[0]?.[1]).toHaveProperty('dispatcher', expect.any(Agent));
-    expect(timeout).toHaveBeenCalledWith(8000);
+    expect(timeout).toHaveBeenCalledWith(30_000);
     expect(getDefaultAutoSelectFamilyAttemptTimeout()).toBe(globalTimeout);
   });
 
@@ -115,20 +145,30 @@ describe('public rating metadata without network', () => {
   });
 
   it('reports timeout attempts without copying raw errors into diagnostics', async () => {
+    vi.useFakeTimers();
     const debug = vi.fn();
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(
-      new DOMException('private-account-id', 'TimeoutError'),
-    );
-    expect(await fetchDuelStars('player', new AbortController().signal, debug)).toBeNull();
+    const request = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new DOMException('private-account-id', 'TimeoutError'));
+    const pending = fetchDuelStars('player', new AbortController().signal, debug);
+    await vi.advanceTimersByTimeAsync(3750);
+    expect(await pending).toBeNull();
+    expect(request).toHaveBeenCalledTimes(5);
     expect(debug).toHaveBeenCalledWith(
-      expect.stringContaining('attempt=3 reason=TimeoutError aborted=false'),
+      expect.stringContaining('attempt=5 reason=TimeoutError aborted=false'),
     );
     expect(debug).toHaveBeenCalledWith('result=null reason=retries-exhausted');
     expect(JSON.stringify(debug.mock.calls)).not.toContain('private-account-id');
   });
 
-  it('ignores unsuccessful HTTP responses', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 503 }));
-    expect(await fetchDuelStars('player', new AbortController().signal)).toBeNull();
+  it('ignores unsuccessful HTTP responses after five attempts', async () => {
+    vi.useFakeTimers();
+    const request = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('', { status: 503 }));
+    const pending = fetchDuelStars('player', new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(3750);
+    expect(await pending).toBeNull();
+    expect(request).toHaveBeenCalledTimes(5);
   });
 });

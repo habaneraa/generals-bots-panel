@@ -258,7 +258,7 @@ describe('post-game public rating sampling', () => {
       outcome: 'lost',
       rating: { before: 12.5, after: null, delta: null },
     });
-    expect(request).toHaveBeenCalledTimes(4);
+    expect(request).toHaveBeenCalledTimes(6);
     game.close();
   });
 });

@@ -1,8 +1,8 @@
 import { Agent } from 'undici';
 
 /** Public profile metadata only; never receives account credentials or controls a game. */
-const RETRY_DELAYS_MS = [250, 500];
-const REQUEST_TIMEOUT_MS = 8000;
+const RETRY_DELAYS_MS = [250, 500, 1000, 2000];
+const REQUEST_TIMEOUT_MS = 30_000;
 const ADDRESS_ATTEMPT_TIMEOUT_MS = 2000;
 // Isolate slow dual-stack connections from the game's WebSocket transport.
 const ratingDispatcher = new Agent({
