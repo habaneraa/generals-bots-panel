@@ -72,6 +72,28 @@ function deferredReplay() {
   return { promise, resolve, reject };
 }
 
+async function startPendingFileImport() {
+  const cancel = vi.fn();
+  const stream = new ReadableStream<Uint8Array<ArrayBuffer>>(
+    {
+      start(controller) {
+        controller.enqueue(new Uint8Array([0x7b]));
+      },
+      cancel,
+    },
+    { highWaterMark: 0 },
+  );
+  const file = new File(['{}'], 'pending.json');
+  vi.spyOn(file, 'stream').mockReturnValue(stream);
+  const input = container.querySelector<HTMLInputElement>('[aria-label="选择录像文件"]')!;
+  await act(async () => {
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() => expect(stream.locked).toBe(true));
+  });
+  return { cancel, stream };
+}
+
 let container: HTMLDivElement;
 let root: Root;
 const originalUrl = window.location.href;
@@ -160,6 +182,37 @@ describe('ReplayWorkspace layout', () => {
       '/api/replays/bots/player-b-game/download?playerId=player-b',
     );
   });
+  it('cancels and releases a local file read when another replay replaces it', async () => {
+    await render();
+    const { cancel, stream } = await startPendingFileImport();
+    vi.mocked(api.replay).mockResolvedValue(sample('replacement-game'));
+
+    await act(async () => {
+      window.history.replaceState(null, '', '#replay=bots/replacement-game');
+      window.dispatchEvent(new Event('hashchange'));
+      await Promise.resolve();
+    });
+    await vi.waitFor(() => {
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(stream.locked).toBe(false);
+    });
+    expect(player().dataset.gameId).toBe('replacement-game');
+  });
+
+  it('cancels and releases a local file read when the Player workspace unmounts', async () => {
+    await render();
+    const { cancel, stream } = await startPendingFileImport();
+
+    await render(true, 'player-b');
+
+    await vi.waitFor(() => {
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(stream.locked).toBe(false);
+    });
+    expect(player()).toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it('shows the standalone open/import form before any replay is loaded', async () => {
     await render();
     expect(api.replay).not.toHaveBeenCalled();

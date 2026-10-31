@@ -71,6 +71,30 @@ describe('browser-local replay file import', () => {
     await expect(readReplayFile(file)).rejects.toBe(failure);
     expect(stream.locked).toBe(false);
   });
+  it('cancels a pending read and releases the reader lock when aborted', async () => {
+    const cancel = vi.fn();
+    const stream = new ReadableStream<Uint8Array<ArrayBuffer>>(
+      {
+        start(controller) {
+          controller.enqueue(new Uint8Array([0x7b]));
+        },
+        cancel,
+      },
+      { highWaterMark: 0 },
+    );
+    const file = new File(['{}'], 'pending.json');
+    vi.spyOn(file, 'stream').mockReturnValue(stream);
+    const abort = new AbortController();
+    const pending = readReplayFile(file, abort.signal);
+
+    await vi.waitFor(() => expect(stream.locked).toBe(true));
+    abort.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(stream.locked).toBe(false);
+  });
+
   it('preserves the read error and releases the reader if cancellation also fails', async () => {
     const failure = new Error('input stream failed');
     const stream = new ReadableStream<Uint8Array<ArrayBuffer>>({

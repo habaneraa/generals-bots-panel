@@ -79,21 +79,30 @@ export function elapsed(ms: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-export async function readReplayFile(file: File): Promise<Replay> {
+export async function readReplayFile(file: File, signal?: AbortSignal): Promise<Replay> {
   const limit = 64 * 1024 * 1024;
   if (file.size > limit) throw new Error('录像文件不能超过 64 MiB');
+  signal?.throwIfAborted();
   const magic = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+  signal?.throwIfAborted();
   let stream = file.stream();
   if (magic[0] === 0x1f && magic[1] === 0x8b) {
     stream = stream.pipeThrough(new DecompressionStream('gzip'));
   }
   const reader = stream.getReader();
+  const cancelRead = () => {
+    // 忽略异步取消拒绝；读取主错由循环与 finally 保留。
+    void reader.cancel(signal?.reason).catch(() => {});
+  };
+  signal?.addEventListener('abort', cancelRead, { once: true });
   const decoder = new TextDecoder();
   let text = '';
   let size = 0;
   try {
+    signal?.throwIfAborted();
     for (;;) {
       const { done, value } = await reader.read();
+      signal?.throwIfAborted();
       if (done) break;
       size += value.byteLength;
       if (size > limit) throw new Error('解压后的录像不能超过 64 MiB');
@@ -102,6 +111,7 @@ export async function readReplayFile(file: File): Promise<Replay> {
     text += decoder.decode();
     return parseReplay(JSON.parse(text));
   } finally {
+    signal?.removeEventListener('abort', cancelRead);
     try {
       await reader.cancel();
     } catch {

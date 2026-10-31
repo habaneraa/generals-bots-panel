@@ -20,16 +20,20 @@ export function ReplayWorkspace({ active = true }: { active?: boolean }) {
   const generation = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const beginPending = useCallback(() => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    return { controller, request: ++generation.current };
+  }, []);
+
   const load = useCallback(
     async (serverName: 'generals' | 'bots', id: string) => {
       if (!playerId) {
         setError('请从 Player 工作区打开录像，或导入本地录像文件。');
         return;
       }
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const request = ++generation.current;
+      const { controller, request } = beginPending();
       setLoading(true);
       setError(null);
       try {
@@ -41,15 +45,19 @@ export function ReplayWorkspace({ active = true }: { active?: boolean }) {
       } catch (cause) {
         if (request === generation.current && !isAbortError(cause)) setError(errorMessage(cause));
       } finally {
-        if (request === generation.current) setLoading(false);
+        if (request === generation.current) {
+          setLoading(false);
+          if (abortRef.current === controller) abortRef.current = null;
+        }
       }
     },
-    [playerId],
+    [beginPending, playerId],
   );
 
   function cancelPending() {
     generation.current++;
     abortRef.current?.abort();
+    abortRef.current = null;
   }
 
   useEffect(() => {
@@ -69,12 +77,11 @@ export function ReplayWorkspace({ active = true }: { active?: boolean }) {
   }, [load]);
 
   async function importFile(file: File) {
-    abortRef.current?.abort();
-    const request = ++generation.current;
+    const { controller, request } = beginPending();
     setLoading(true);
     setError(null);
     try {
-      const value = await readReplayFile(file);
+      const value = await readReplayFile(file, controller.signal);
       if (request !== generation.current) return;
       setReplay(value);
       setRevision(request);
@@ -84,7 +91,10 @@ export function ReplayWorkspace({ active = true }: { active?: boolean }) {
     } catch (cause) {
       if (request === generation.current) setError(`无法读取录像：${errorMessage(cause)}`);
     } finally {
-      if (request === generation.current) setLoading(false);
+      if (request === generation.current) {
+        setLoading(false);
+        if (abortRef.current === controller) abortRef.current = null;
+      }
     }
   }
 
