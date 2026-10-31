@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from './app.js';
 import { PlayerManager } from './player-manager.js';
 
@@ -23,7 +23,7 @@ async function setup(port?: number) {
   const app = await createApp(manager, webDir, port);
   resources.push({ app, manager, dir });
   await app.ready();
-  return { app, webDir };
+  return { app, manager, webDir };
 }
 
 const headers = { host: '127.0.0.1:3000' };
@@ -47,6 +47,30 @@ describe('built web assets', () => {
     const api = await app.inject({ url: '/api/missing', headers });
     expect(api.statusCode).toBe(404);
     expect(api.json()).toEqual({ message: '接口不存在' });
+  });
+});
+
+describe('HTTP error boundary', () => {
+  it('returns intentional client errors and logs internal errors without exposing details', async () => {
+    const { app, manager } = await setup();
+    const clientError = await app.inject({
+      method: 'POST',
+      url: '/api/runs/stop',
+      headers,
+    });
+    expect(clientError.statusCode).toBe(409);
+    expect(clientError.json()).toEqual({ message: '请先创建 Player' });
+
+    const failure = new Error('database unavailable at /private/data');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(manager, 'dashboard').mockImplementation(() => {
+      throw failure;
+    });
+    const internalError = await app.inject({ url: '/api/dashboard', headers });
+    expect(internalError.statusCode).toBe(500);
+    expect(internalError.json()).toEqual({ message: '内部错误，请查看服务端终端' });
+    expect(internalError.body).not.toContain('private/data');
+    expect(log).toHaveBeenCalledWith(failure);
   });
 });
 
