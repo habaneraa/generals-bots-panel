@@ -5,7 +5,7 @@ import globals from 'globals';
 import { builtinModules } from 'node:module';
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', 'dist/**', 'data/**', 'browser_agent/**', 'coverage/**'] },
+  { ignores: ['node_modules/**', 'dist/**', 'data/**', 'coverage/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

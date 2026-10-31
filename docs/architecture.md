@@ -25,7 +25,6 @@ packages/contracts/     # Zod 配置校验、前后端共享 DTO，不依赖 Nod
 config/runtime.ts       # 无副作用的本机默认值与端口校验
 test/fixtures/          # 仅单元测试使用的观察和子进程夹具
 docs/
-browser_agent/          # 原始参考，不被新代码导入
 ```
 
 当前使用单个 npm 项目，避免引入包发布和多重构建链。共享契约不依赖服务端，前端不会导入进程、文件系统或数据库模块。服务端通过 esbuild 打包，第三方依赖保持外置；前端通过 Vite 构建。Node 内置 SQLite，无原生 npm 扩展或额外数据库服务。

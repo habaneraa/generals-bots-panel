@@ -2,7 +2,7 @@
 
 独立的 generals.io agent 控制台，使用 **Node.js 24 + TypeScript + React + Tailwind CSS**。游戏只通过原生 WebSocket 连接；策略只通过子进程 stdin/stdout 通信，不导入 AverageJoe，不管理其权重、配置或 Python 环境。
 
-`browser_agent/` 仅保留参考代码；新项目不运行其中的 Python 代码，也不读取其中的账号文件。只记录真实对局，未运行时统计为 0、历史为空。
+只记录真实对局；服务未运行时统计为 0、历史为空。
 
 文档导航：[现行文档索引](docs/README.md) · [配置与验证](docs/configuration.md) · [架构](docs/architecture.md) · [agent 协议](docs/agent-protocol.md) · [本地录像](docs/replay-format.md)。
 
