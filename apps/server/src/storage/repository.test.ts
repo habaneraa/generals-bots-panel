@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -128,6 +128,23 @@ describe('local persistence', () => {
     const reopened = new RunLog('fixture', path);
     expect(reopened.tail().at(-1)?.id).toBe(205);
     expect(reopened.write('info', 'restart').id).toBe(206);
+  });
+
+  it('separates new entries from an incomplete trailing JSONL line after restart', () => {
+    const path = join(temp(), 'fixture.jsonl');
+    const logger = new RunLog('fixture', path);
+    logger.write('info', 'before crash');
+    appendFileSync(path, '{"id":2,"time":"incomplete"');
+
+    const recovered = new RunLog('fixture', path);
+    expect(recovered.tail()).toMatchObject([{ id: 1, message: 'before crash' }]);
+    expect(recovered.write('info', 'after restart').id).toBe(2);
+
+    const reopened = new RunLog('fixture', path);
+    expect(reopened.tail().map(({ id, message }) => [id, message])).toEqual([
+      [1, 'before crash'],
+      [2, 'after restart'],
+    ]);
   });
 
   it('accepts only live configuration and validates its required fields', () => {

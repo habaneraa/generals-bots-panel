@@ -4,6 +4,8 @@ import type { LogEntry, LogLevel } from '../../../../packages/contracts/src/inde
 export class RunLog {
   private entries: LogEntry[] = [];
   private sequence = 0;
+  // 崩溃残留的无换行尾部必须与下一条记录隔开，避免污染新 JSONL 行。
+  private needsNewline = false;
 
   constructor(
     readonly runId: string,
@@ -16,7 +18,9 @@ export class RunLog {
         const start = Math.max(0, size - 512 * 1024);
         const buffer = Buffer.alloc(size - start);
         readSync(fd, buffer, 0, buffer.length, start);
-        const lines = buffer.toString('utf8').split('\n');
+        const contents = buffer.toString('utf8');
+        this.needsNewline = size > 0 && !contents.endsWith('\n');
+        const lines = contents.split('\n');
         if (start > 0) lines.shift();
         this.entries = lines
           .filter(Boolean)
@@ -24,7 +28,7 @@ export class RunLog {
             try {
               return [JSON.parse(line) as LogEntry];
             } catch {
-              return []; // A crash can leave one incomplete trailing line.
+              return []; // 崩溃可能留下不完整的尾行，后续续写会另起一行。
             }
           })
           .slice(-200);
@@ -45,7 +49,10 @@ export class RunLog {
       level,
       message: message.slice(0, 16000),
     };
-    appendFileSync(this.path, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+    appendFileSync(this.path, `${this.needsNewline ? '\n' : ''}${JSON.stringify(entry)}\n`, {
+      mode: 0o600,
+    });
+    this.needsNewline = false;
     this.entries.push(entry);
     if (this.entries.length > 200) this.entries.shift();
     return entry;
