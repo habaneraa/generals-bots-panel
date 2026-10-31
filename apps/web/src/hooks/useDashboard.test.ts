@@ -45,6 +45,7 @@ function snapshot(turn = 0, playerId = 'player-a'): Dashboard {
     state: {
       run: null,
       phase: turn ? 'playing' : 'starting',
+      phaseStartedAt: '2026-10-26T14:30:00.000Z',
       match: null,
       turn,
       agentLatencyMs: null,

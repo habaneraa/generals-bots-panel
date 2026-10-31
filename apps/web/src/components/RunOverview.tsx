@@ -1,7 +1,8 @@
 import { ArrowUpRight, Clock3, Cpu, Flag, Play, Square, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { RunState } from '../../../../packages/contracts/src/index';
 import type { PendingAction } from '../hooks/useDashboard';
-import { formatDateTime, formatTime, isRunning, phaseLabels, replayHref } from '../lib/format';
+import { formatTime, isRunning, phaseLabels, replayHref } from '../lib/format';
 import { Spinner } from './Shared';
 
 type Props = {
@@ -10,12 +11,33 @@ type Props = {
   onStop: () => void;
 };
 
+function PhaseDuration({ since }: { since: string }) {
+  const [now, setNow] = useState(Date.now);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const seconds = Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const duration = [
+    hours > 0 ? `${hours} 小时` : '',
+    minutes > 0 ? `${minutes} 分` : '',
+    `${seconds % 60} 秒`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <span className="whitespace-nowrap text-sm font-normal tabular text-muted">（{duration}）</span>
+  );
+}
+
 export function RunOverview({ state, pending, onStop }: Props) {
   const running = isRunning(state.phase);
   const replay = replayHref(state.match?.replayUrl ?? null);
-  const caption = state.run
-    ? `启动于 ${formatDateTime(state.run.startedAt)}`
-    : '配置你的 Bot，让下一场对局从这里开始。';
   const maxGames = state.run ? (state.run.config.autopilot ? state.run.config.maxGames : 1) : null;
   const failed = state.phase === 'failed';
 
@@ -24,7 +46,7 @@ export function RunOverview({ state, pending, onStop }: Props) {
       className="overflow-hidden rounded-[4px] border border-line bg-surface"
       aria-labelledby="run-heading"
     >
-      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
+      <div className="flex flex-wrap items-center gap-3 p-4">
         <div
           className={`grid size-9 shrink-0 place-items-center rounded-[3px] ${
             failed ? 'bg-danger/[0.08] text-danger' : 'bg-teal-soft text-teal'
@@ -33,23 +55,13 @@ export function RunOverview({ state, pending, onStop }: Props) {
           <Cpu size={19} aria-hidden="true" />
         </div>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`size-1.5 rounded-full ${
-                running ? 'animate-pulse bg-teal' : failed ? 'bg-danger' : 'bg-faint'
-              }`}
-              aria-hidden="true"
-            />
-            <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-faint">
-              Run status
-            </span>
-          </div>
-          <h2 id="run-heading" className="mt-1 text-lg font-semibold tracking-tight">
-            {phaseLabels[state.phase]}
-          </h2>
-          <p className="mt-0.5 text-[11px] leading-snug text-muted">{caption}</p>
-        </div>
+        <h2
+          id="run-heading"
+          className="min-w-0 flex-1 text-lg font-semibold leading-snug tracking-tight"
+        >
+          {phaseLabels[state.phase]}
+          <PhaseDuration key={state.phaseStartedAt} since={state.phaseStartedAt} />
+        </h2>
 
         <div className="w-full sm:w-auto">
           {running ? (

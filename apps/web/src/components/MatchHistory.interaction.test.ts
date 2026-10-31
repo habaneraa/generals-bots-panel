@@ -151,6 +151,7 @@ describe('App star history refresh key', () => {
       state: {
         run: null,
         phase: 'playing',
+        phaseStartedAt: '2026-10-26T14:30:00.000Z',
         match: null,
         turn: 1,
         agentLatencyMs: null,

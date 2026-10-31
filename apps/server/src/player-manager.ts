@@ -52,6 +52,7 @@ export class PlayerManager {
   private readonly lookups = new Set<Promise<string>>();
   private readonly lifetime = new AbortController();
   private closed = false;
+  private readonly idleAt = new Date().toISOString();
 
   constructor(
     dataDir: string,
@@ -101,6 +102,7 @@ export class PlayerManager {
       state: {
         run: null,
         phase: 'idle',
+        phaseStartedAt: this.idleAt,
         match: null,
         turn: 0,
         agentLatencyMs: null,

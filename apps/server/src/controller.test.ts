@@ -9,7 +9,7 @@ import {
 import type { GameConnection, GameEnd } from './game/types.js';
 import { FixtureGame, fixtureObservation } from '../../../test/fixtures/game.js';
 import { AgentProcess } from './agent/process.js';
-import type { Controller } from './controller.js';
+import { Controller } from './controller.js';
 import { PlayerManager } from './player-manager.js';
 import { RunLog } from './storage/logs.js';
 import { createApp } from './app.js';
@@ -100,6 +100,111 @@ async function idle(controller: Controller) {
 }
 
 describe('run lifecycle with isolated test inputs', () => {
+  it('timestamps phase transitions without changing timestamps on repeated snapshots or stops', async () => {
+    const initialAt = '2026-10-26T00:00:00.000Z';
+    const startedAt = '2026-10-26T00:00:10.000Z';
+    const queueingAt = '2026-10-26T00:00:20.000Z';
+    const stoppingAt = '2026-10-26T00:00:30.000Z';
+    const stoppedAt = '2026-10-26T00:00:40.000Z';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(initialAt);
+    cleanups.push(async () => {
+      vi.useRealTimers();
+    });
+    let joined!: () => void;
+    const matchmaking = new Promise<void>((resolve) => {
+      joined = resolve;
+    });
+    let cancelJoin: (() => void) | undefined;
+    const game = new FixtureGame();
+    vi.spyOn(game, 'connect').mockImplementation(async () => {
+      vi.setSystemTime(queueingAt);
+    });
+    vi.spyOn(game, 'join').mockImplementation(
+      () =>
+        new Promise<never>((_, reject) => {
+          cancelJoin = () => reject(new Error('Matchmaking cancelled'));
+          joined();
+        }),
+    );
+    const { controller } = await setup(game);
+    cleanups.push(async () => {
+      cancelJoin?.();
+    });
+    expect(controller.dashboard().state).toMatchObject({
+      phase: 'idle',
+      phaseStartedAt: initialAt,
+    });
+    vi.setSystemTime('2026-10-26T00:00:01.000Z');
+    expect(controller.dashboard().state.phaseStartedAt).toBe(initialAt);
+
+    vi.setSystemTime(startedAt);
+    expect(controller.start(defaultConfig).state).toMatchObject({
+      phase: 'starting',
+      phaseStartedAt: startedAt,
+      run: { startedAt },
+    });
+    vi.setSystemTime('2026-10-26T00:00:11.000Z');
+    expect(controller.dashboard().state.phaseStartedAt).toBe(startedAt);
+
+    await matchmaking;
+    expect(controller.dashboard().state).toMatchObject({
+      phase: 'queueing',
+      phaseStartedAt: queueingAt,
+    });
+    vi.setSystemTime('2026-10-26T00:00:21.000Z');
+    expect(controller.dashboard().state.phaseStartedAt).toBe(queueingAt);
+
+    vi.setSystemTime(stoppingAt);
+    const firstStop = controller.stop();
+    expect(controller.dashboard().state).toMatchObject({
+      phase: 'stopping',
+      phaseStartedAt: stoppingAt,
+    });
+    vi.setSystemTime('2026-10-26T00:00:31.000Z');
+    const secondStop = controller.stop();
+    expect(controller.dashboard().state.phaseStartedAt).toBe(stoppingAt);
+
+    vi.setSystemTime(stoppedAt);
+    cancelJoin!();
+    await Promise.all([firstStop, secondStop]);
+    expect(controller.dashboard().state).toMatchObject({
+      phase: 'stopped',
+      phaseStartedAt: stoppedAt,
+      run: { startedAt, endedAt: stoppedAt },
+    });
+    vi.setSystemTime('2026-10-26T00:00:41.000Z');
+    expect(controller.dashboard().state.phaseStartedAt).toBe(stoppedAt);
+    expect((await controller.stop()).state.phaseStartedAt).toBe(stoppedAt);
+  });
+
+  it.each(['stopped', 'failed'] as const)(
+    'restores the %s phase timestamp from the persisted run end time',
+    async (phase) => {
+      const { repository } = await setup();
+      const endedAt = '2026-10-25T00:00:30.000Z';
+      repository.putRun({
+        id: '00000000-0000-4000-8000-000000000001',
+        startedAt: '2026-10-25T00:00:00.000Z',
+        endedAt,
+        phase,
+        config: defaultConfig,
+        error: phase === 'failed' ? 'Previous run failed' : null,
+      });
+      const restored = new Controller(repository, resolve('.'), {
+        id: 'restored',
+        server: 'generals',
+        userId: 'test',
+        nickname: 'restored',
+      });
+      cleanups.push(async () => {
+        await restored.close();
+      });
+      expect(restored.dashboard().state).toMatchObject({ phase, phaseStartedAt: endedAt });
+      expect((await restored.stop()).state.phaseStartedAt).toBe(endedAt);
+    },
+  );
+
   it('runs autopilot using a real Node child and persists results', async () => {
     const { controller, repository } = await setup();
     controller.start({ ...defaultConfig, autopilot: true, maxGames: 2, cooldownMs: 0 });

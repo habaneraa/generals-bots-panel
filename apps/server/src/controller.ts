@@ -65,6 +65,7 @@ export class Controller {
     this.state = {
       run,
       phase: run?.phase ?? 'idle',
+      phaseStartedAt: run?.endedAt ?? new Date().toISOString(),
       match: null,
       turn: 0,
       agentLatencyMs: null,
@@ -120,6 +121,7 @@ export class Controller {
   }
 
   private setPhase(phase: RunPhase): void {
+    if (this.state.phase !== phase) this.state.phaseStartedAt = new Date().toISOString();
     this.state.phase = phase;
     if (this.state.run) {
       this.state.run.phase = phase;
@@ -153,6 +155,7 @@ export class Controller {
     this.state = {
       run,
       phase: 'starting',
+      phaseStartedAt: run.startedAt,
       match: null,
       turn: 0,
       agentLatencyMs: null,

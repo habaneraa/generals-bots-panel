@@ -48,6 +48,7 @@ function snapshot(player = players[0]!): Dashboard {
         config: defaultConfig,
       },
       phase: 'stopped',
+      phaseStartedAt: '2026-10-25T00:00:00Z',
       match: null,
       turn: 0,
       agentLatencyMs: null,

@@ -146,6 +146,7 @@ export interface RunRecord {
 export interface RunState {
   run: RunRecord | null;
   phase: RunPhase;
+  phaseStartedAt: string;
   match: MatchRecord | null;
   turn: number;
   agentLatencyMs: number | null;
