@@ -289,14 +289,6 @@ function DashboardContent({
                 active={activeTab === 'logs'}
               />
             </div>
-            <footer className="mt-7 flex flex-col gap-1 border-t border-line pt-3 text-[9px] text-faint sm:flex-row sm:items-center sm:justify-between">
-              <span className="font-semibold uppercase tracking-[0.14em] text-muted">
-                Generals <span className="font-normal text-faint">Bot Panel</span>
-              </span>
-              <span className="truncate" title={dashboard.dataDir}>
-                本地持久化 · <span className="font-mono">{dashboard.dataDir}</span>
-              </span>
-            </footer>
           </>
         ) : dashboard ? (
           <section className="panel mt-4 flex min-h-[360px] flex-col items-center justify-center gap-3 px-6 text-center">
