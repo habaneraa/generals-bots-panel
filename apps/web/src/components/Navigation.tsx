@@ -43,7 +43,7 @@ export function Navigation({ active, onChange }: Props) {
 
   return (
     <nav
-      className="flex gap-0.5 overflow-x-auto px-2 pb-2 [scrollbar-width:none] lg:flex-col lg:overflow-visible lg:pb-0"
+      className="flex gap-0.5 overflow-x-auto px-2 pb-2 lg:flex-col lg:overflow-visible lg:pb-0"
       role="tablist"
       aria-label="控制台页面"
     >
