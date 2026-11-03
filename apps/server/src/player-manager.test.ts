@@ -657,7 +657,7 @@ describe('local Player deletion', () => {
     expect((await app.inject({ url: '/api/players/missing', headers })).statusCode).toBe(404);
   });
 
-  it('deletes noncurrent workspace data only, preserves other bytes, then deletes the final Player', async () => {
+  it('removes Players from the registry while retaining their files across restart', async () => {
     const lookup = vi.fn(nicknameLookup);
     const { manager, app, dir } = await api(undefined, lookup);
     const { a, b } = await addPair(manager);
@@ -674,7 +674,17 @@ describe('local Player deletion', () => {
     writeFileSync(replay, 'other replay bytes');
     const log = join(second.repository.dataDir, 'logs', 'other.jsonl');
     writeFileSync(log, 'other log bytes');
+    first.saveConfig({ ...defaultConfig, command: 'removed-agent' });
+    const runId = randomUUID();
+    first.repository.putMatch(match(runId));
     const firstDir = first.repository.dataDir;
+    const firstConfig = readFileSync(join(firstDir, 'config.json'));
+    const firstLog = join(firstDir, 'logs', 'retained.jsonl');
+    writeFileSync(firstLog, 'removed log bytes');
+    const replayDir = join(firstDir, 'server-generals', 'retained');
+    mkdirSync(replayDir, { recursive: true });
+    const firstReplay = join(replayDir, 'replay.json.gz');
+    writeFileSync(firstReplay, 'removed replay bytes');
     const response = await app.inject({
       method: 'DELETE',
       url: `/api/players/${a.id}?playerId=${b.id}`,
@@ -686,7 +696,15 @@ describe('local Player deletion', () => {
       players: [b],
       config: { command: 'remaining-agent' },
     });
-    expect(existsSync(firstDir)).toBe(false);
+    expect(existsSync(firstDir)).toBe(true);
+    expect(readFileSync(join(firstDir, 'config.json'))).toEqual(firstConfig);
+    const retained = new Repository(firstDir);
+    expect(retained.getConfig().command).toBe('removed-agent');
+    expect(retained.matches(1, 1).total).toBe(1);
+    retained.close();
+    expect(readFileSync(firstLog, 'utf8')).toBe('removed log bytes');
+    expect(readFileSync(firstReplay, 'utf8')).toBe('removed replay bytes');
+    expect(() => manager.controller(a.id)).toThrow('Player 不存在');
     expect(readFileSync(replay, 'utf8')).toBe('other replay bytes');
     expect(readFileSync(log, 'utf8')).toBe('other log bytes');
     expect(lookup).toHaveBeenCalledTimes(2); // Deletion never touches the remote account.
@@ -704,6 +722,10 @@ describe('local Player deletion', () => {
     const restarted = new PlayerManager(dir, dir, undefined, nicknameLookup);
     cleanups.push(() => restarted.close());
     expect(restarted.dashboard().player).toBeNull();
+    expect(restarted.players).toEqual([]);
+    expect(existsSync(firstDir)).toBe(true);
+    expect(readFileSync(replay, 'utf8')).toBe('other replay bytes');
+    expect(readFileSync(log, 'utf8')).toBe('other log bytes');
   });
 
   it('chooses a remaining fallback when deleting the selected Player, without changing another workspace response', async () => {
@@ -789,7 +811,7 @@ describe('local Player deletion', () => {
     expect(() => controller.start(defaultConfig)).toThrow('正在关闭');
   });
 
-  it('rolls back directory and reopens the Player if registry persistence fails', async () => {
+  it('retains the directory and reopens the Player if registry persistence fails', async () => {
     const { manager, dir } = setup();
     const { a, b } = await addPair(manager);
     const first = manager.controller(a.id);
@@ -805,7 +827,7 @@ describe('local Player deletion', () => {
     expect(readFileSync(join(dir, 'players.json'), 'utf8')).toBe(original);
     expect(manager.dashboard(a.id).config.command).toBe('retained-agent');
     expect(manager.players).toHaveLength(2);
-    expect(readdirSync(join(dir, '.player-trash'))).toEqual([]);
+    expect(existsSync(join(dir, '.player-trash'))).toBe(false);
     manager.controller(a.id).saveConfig(defaultConfig);
     await manager.remove(a.id);
     expect(manager.players).toEqual([b]);
@@ -848,30 +870,22 @@ describe('local Player deletion', () => {
     expect(manager.players).toEqual([]);
   });
 
-  it('warns with the cleanup cause after committed Player deletion', async () => {
+  it('keeps the original directory in place when removal is published', async () => {
     const { manager, dir } = setup();
     const player = (await manager.add(input)).player!;
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const trash = join(dir, '.player-trash');
-    const unsubscribe = manager.subscribe(() => {
-      if (manager.players.some((entry) => entry.id === player.id)) return;
-      const [name] = readdirSync(trash);
-      if (name) renameSync(join(trash, name), join(trash, `held-${name}`));
+    const directory = manager.controller(player.id).repository.dataDir;
+    const published = vi.fn(() => {
+      expect(existsSync(directory)).toBe(true);
+      expect(existsSync(join(dir, '.player-trash'))).toBe(false);
     });
-
-    let result: Dashboard;
+    const unsubscribe = manager.subscribe(published);
     try {
-      result = await manager.remove(player.id);
+      expect((await manager.remove(player.id)).player).toBeNull();
     } finally {
       unsubscribe();
     }
-
-    expect(result!.player).toBeNull();
+    expect(published).toHaveBeenCalledOnce();
     expect(manager.players).toEqual([]);
-    expect(warn).toHaveBeenCalledWith(
-      'Player 已删除，但内部回收目录清理失败',
-      expect.objectContaining({ code: 'ENOENT' }),
-    );
   });
 
   it('signals deleted pinned SSE streams and only updates player lists on other streams', async () => {

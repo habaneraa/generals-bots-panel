@@ -243,11 +243,11 @@ describe('PlayerSwitcher', () => {
 });
 
 describe('Player deletion dialog', () => {
-  it('shows detailed irreversible local-only warning and server identity, hides userId until explicitly revealed', async () => {
+  it('shows detailed list-only removal warning and server identity, hides userId until explicitly revealed', async () => {
     const dialog = await openDelete();
     expect(dialog.open).toBe(true);
     expect(dialog.textContent).toContain(
-      '永久删除此Player的本地配置、历史、日志和录像，不能恢复，不影响服务器账号',
+      '仅从列表中移除此 Player，本地配置、历史、日志和录像仍保留在磁盘原位置，不影响服务器账号。',
     );
     expect(dialog.textContent).toContain('服务器主账号');
     expect(dialog.textContent).toContain('data/players/a');
@@ -307,13 +307,13 @@ describe('Player deletion dialog', () => {
     const request = deferred<PlayerDetails>();
     vi.mocked(api.playerDetails).mockReturnValueOnce(request.promise);
     const dialog = await openDelete();
-    expect(button('永久删除本地数据', dialog).disabled).toBe(true);
+    expect(button('从列表移除', dialog).disabled).toBe(true);
     expect(dialog.textContent).toContain('正在读取 Player 详情');
     await act(async () => request.resolve(details(players[1])));
     expect(dialog.textContent).toContain('返回的 Player 与删除目标不一致');
-    expect(button('永久删除本地数据', dialog).disabled).toBe(true);
+    expect(button('从列表移除', dialog).disabled).toBe(true);
     await click('重试详情', dialog);
-    expect(button('永久删除本地数据', dialog).disabled).toBe(false);
+    expect(button('从列表移除', dialog).disabled).toBe(false);
   });
 
   it('aborts old details on target change and ignores late responses', async () => {
@@ -328,7 +328,7 @@ describe('Player deletion dialog', () => {
     const dialog = container.querySelector('dialog')!;
     expect(dialog.textContent).toContain('服务器练习账号');
     expect(dialog.textContent).not.toContain('服务器主账号');
-    await click('永久删除本地数据', dialog);
+    await click('从列表移除', dialog);
     expect(onDelete).toHaveBeenCalledWith('b', expect.any(AbortSignal));
   });
 
@@ -366,28 +366,28 @@ describe('Player deletion dialog', () => {
       );
       expect(taskLabel?.nextElementSibling?.textContent).toBe('运行中');
       expect(dialog.textContent).toContain('先切换到该 Player 并停止运行');
-      expect(button('永久删除本地数据', dialog).disabled).toBe(true);
-      await click('永久删除本地数据', dialog);
+      expect(button('从列表移除', dialog).disabled).toBe(true);
+      await click('从列表移除', dialog);
       expect(onDelete).not.toHaveBeenCalled();
       await click('刷新运行状态与详情', dialog);
       expect(taskLabel?.nextElementSibling?.textContent).toBe('未运行');
-      expect(button('永久删除本地数据', dialog).disabled).toBe(false);
+      expect(button('从列表移除', dialog).disabled).toBe(false);
     },
   );
 
   it('retains details and running rejection errors, prevents duplicate deletes and cancels closed mutations', async () => {
     onDelete.mockRejectedValueOnce(new Error('Player 正在运行（409）'));
     const dialog = await openDelete();
-    await click('永久删除本地数据', dialog);
+    await click('从列表移除', dialog);
     expect(dialog.textContent).toContain('Player 正在运行（409）');
     expect(dialog.textContent).toContain('请先确认该 Player 已停止运行');
     expect(dialog.textContent).toContain('data/players/a');
     const request = deferred<boolean>();
     onDelete.mockReturnValueOnce(request.promise);
-    await click('永久删除本地数据', dialog);
-    await click('永久删除本地数据', dialog);
+    await click('从列表移除', dialog);
+    await click('从列表移除', dialog);
     expect(onDelete).toHaveBeenCalledTimes(2);
-    expect(button('永久删除本地数据', dialog).disabled).toBe(true);
+    expect(button('从列表移除', dialog).disabled).toBe(true);
     const signal = onDelete.mock.calls[1]![1];
     await click('关闭删除确认', dialog);
     expect(signal.aborted).toBe(true);

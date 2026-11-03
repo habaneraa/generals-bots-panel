@@ -137,7 +137,8 @@ export function DeletePlayerDialog({ target, fallbackFocus, onClose, onDelete }:
             id={`${id}-warning`}
             className="rounded-[3px] border border-danger/40 bg-danger/10 p-3 text-xs font-semibold leading-relaxed text-danger"
           >
-            永久删除此Player的本地配置、历史、日志和录像，不能恢复，不影响服务器账号
+            仅从列表中移除此
+            Player，本地配置、历史、日志和录像仍保留在磁盘原位置，不影响服务器账号。
           </p>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
             <dt className="text-muted">服务器昵称</dt>
@@ -231,7 +232,7 @@ export function DeletePlayerDialog({ target, fallbackFocus, onClose, onDelete }:
           {pending && (
             <p role="status" className="flex items-center gap-2 text-xs text-muted">
               <Spinner />
-              正在删除本地数据，请勿重复提交…
+              正在从列表移除，请勿重复提交…
             </p>
           )}
         </div>
@@ -245,7 +246,7 @@ export function DeletePlayerDialog({ target, fallbackFocus, onClose, onDelete }:
             disabled={loading || !details || running || pending}
             onClick={() => void remove()}
           >
-            {pending ? <Spinner /> : <Trash2 size={12} aria-hidden="true" />}永久删除本地数据
+            {pending ? <Spinner /> : <Trash2 size={12} aria-hidden="true" />}从列表移除
           </button>
         </footer>
       </div>

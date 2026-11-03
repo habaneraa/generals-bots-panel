@@ -48,7 +48,7 @@ React ── HTTP + SSE ── Node Controller ── stdin/stdout ── 外部
 
 ## 前端布局
 
-桌面端使用左侧固定导航，移动端折叠为顶部横向 Tab；五个页面为「启动 / 统计 / 对局记录 / 录像 / 日志」，默认启动页。统一浅色主题，主色为 `#008080`，控件使用 2–4px 小圆角。样式由 Tailwind CSS v4 与 [应用样式](../apps/web/src/styles/app.css) 中的设计令牌生成。日志页同样使用浅色面板，不混用深色区块。同一 Player 内的面板常驻挂载，使用 `hidden` 控制显示，Tab 切换不丢未保存的表单草稿，也不影响 SSE 或运行任务。左下角 Player 按钮打开相邻浮窗，列出服务器昵称缓存、服务器及默认隐藏的 User ID，也可仅用 server/userId 新增账号或打开删除详情确认。删除弹窗使用原生 `<dialog>`，展示本地数据量与不可恢复警告，并禁止删除运行中的账号。切换 Player 会按 ID 重新挂载整组面板，清理草稿、历史分页与筛选、详情及录像等旧状态，并关闭旧事件流、取消旧查询；不停止后台运行。对局详情使用原生 `<dialog>` modal，支持 Esc、遮罩点击关闭和焦点恢复。Tab 支持方向键、Home / End 与标准 ARIA 语义；日志页重新显示时按用户的自动跟随设置滚动。录像还可通过 `/replay` 独立打开，链接携带 Player ID，只加载该 Player 的录像接口或本地文件，不依赖控制台 SSE。
+桌面端使用左侧固定导航，移动端折叠为顶部横向 Tab；五个页面为「启动 / 统计 / 对局记录 / 录像 / 日志」，默认启动页。统一浅色主题，主色为 `#008080`，控件使用 2–4px 小圆角。样式由 Tailwind CSS v4 与 [应用样式](../apps/web/src/styles/app.css) 中的设计令牌生成。日志页同样使用浅色面板，不混用深色区块。同一 Player 内的面板常驻挂载，使用 `hidden` 控制显示，Tab 切换不丢未保存的表单草稿，也不影响 SSE 或运行任务。左下角 Player 按钮打开相邻浮窗，列出服务器昵称缓存、服务器及默认隐藏的 User ID，也可仅用 server/userId 新增账号或打开删除详情确认。删除弹窗使用原生 `<dialog>`，展示本地数据量与仅移除列表、保留磁盘文件的说明，并禁止删除运行中的账号。切换 Player 会按 ID 重新挂载整组面板，清理草稿、历史分页与筛选、详情及录像等旧状态，并关闭旧事件流、取消旧查询；不停止后台运行。对局详情使用原生 `<dialog>` modal，支持 Esc、遮罩点击关闭和焦点恢复。Tab 支持方向键、Home / End 与标准 ARIA 语义；日志页重新显示时按用户的自动跟随设置滚动。录像还可通过 `/replay` 独立打开，链接携带 Player ID，只加载该 Player 的录像接口或本地文件，不依赖控制台 SSE。
 
 ## 运行状态与并发
 
@@ -76,7 +76,7 @@ idle/stopped/failed → starting → queueing → playing → cooldown → queue
 
 Player 以 `<server, userId>` 唯一标识，注册表保存 User ID 字符串、服务器昵称缓存、内部 ID 和上次选择。新增只接收 server/userId，通过独立 GameSocket 连接查询 `get_username` 后关闭，不加入游戏；昵称查询成功才持久化新 Player。已有缓存启动后后台刷新，游戏连接成功时同步更新；失败保留有效缓存。异步查询结束后再次检查身份唯一性，关闭时取消未完成查询，防止延迟响应写入已删除账号或已关闭的数据目录。
 
-PlayerManager 为每个账号建立独立 Repository/Controller；配置、SQLite、日志和录像保存在各自的 Player 数据子目录，所有 API 查询、SSE 与下载均支持显式 `playerId`。无效 ID 不回退到其他账号。删除前通过详情接口读取固定 Player 的身份、路径、运行状态和数据量；运行中返回 409。确认后删除该 Player 的注册信息与本地数据，不影响游戏服务器账号。被删除 Player 的事件流收到 `player-deleted` 后结束，其他事件流仍固定在自己的 Player。
+PlayerManager 为每个账号建立独立 Repository/Controller；配置、SQLite、日志和录像保存在各自的 Player 数据子目录，所有 API 查询、SSE 与下载均支持显式 `playerId`。无效 ID 不回退到其他账号。删除前通过详情接口读取固定 Player 的身份、路径、运行状态和数据量；运行中返回 409。确认后仅移除该 Player 的注册信息，配置、历史、日志和录像保留在原数据目录，不移动或删除文件，不影响游戏服务器账号；重启不会自动将保留目录加入列表。被删除 Player 的事件流收到 `player-deleted` 后结束，其他事件流仍固定在自己的 Player。
 
 运行参数由独立 `ConfigStore` 保存：可读的缩进 JSON、Zod 校验、临时文件写入后原子替换、默认 0600 权限。启动时读取，界面保存后同步更新缓存；手工编辑应在停止服务后进行，重启生效。仅支持当前格式，不探测和迁移旧单玩家目录、账号文件或 SQLite settings；损坏配置或缺失 Player 数据会明确报错，不用默认值静默替换。
 

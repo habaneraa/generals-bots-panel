@@ -1,13 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-} from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import {
@@ -244,10 +236,10 @@ export class PlayerManager {
     if (workspaceId !== undefined) this.controller(workspaceId);
     if (controller.active || this.deleting.has(playerId))
       throw new HttpError(409, '请停止 Player 的运行后再删除');
-    const directory = this.playerDirectory(playerId);
+    this.playerDirectory(playerId);
     this.deleting.add(playerId);
     // close() locks Controller.start synchronously, before its first await.
-    const task = this.deletePlayer(controller, directory, workspaceId);
+    const task = this.deletePlayer(controller, workspaceId);
     this.deletions.add(task);
     void task
       .finally(() => {
@@ -258,13 +250,8 @@ export class PlayerManager {
     return task;
   }
 
-  private async deletePlayer(
-    controller: Controller,
-    directory: string,
-    workspaceId?: string,
-  ): Promise<Dashboard> {
+  private async deletePlayer(controller: Controller, workspaceId?: string): Promise<Dashboard> {
     const player = controller.player;
-    let staged: string | undefined;
     let repositoryClosed = false;
     try {
       await controller.close();
@@ -272,12 +259,6 @@ export class PlayerManager {
       controller.repository.close();
       repositoryClosed = true;
       this.playerDirectory(player.id); // Revalidate after asynchronous close.
-      const trash = join(this.dataDir, '.player-trash');
-      if (!existsSync(trash)) mkdirSync(trash, { mode: 0o700 });
-      verifyDirectory(trash);
-      const target = join(trash, `${player.id}-${randomUUID()}`);
-      renameSync(directory, target);
-      staged = target;
       const players = this.registry.players.filter((entry) => entry.id !== player.id);
       this.persist({
         ...this.registry,
@@ -288,11 +269,6 @@ export class PlayerManager {
             : this.registry.activePlayerId,
       });
     } catch (error) {
-      if (staged) {
-        verifyDirectory(join(this.dataDir, '.player-trash'));
-        verifyDirectory(staged);
-        renameSync(staged, directory);
-      }
       if (!this.closed) {
         if (!repositoryClosed) controller.repository.close();
         this.controllers.delete(player.id);
@@ -302,15 +278,6 @@ export class PlayerManager {
     }
     this.controllers.delete(player.id);
     this.notify();
-    // Registry publication is the commit point. Cleanup failure leaves only internal trash,
-    // never a registered Player pointing at missing files; do not report committed deletion as failed.
-    try {
-      verifyDirectory(join(this.dataDir, '.player-trash'));
-      verifyDirectory(staged!);
-      rmSync(staged!, { recursive: true });
-    } catch (error) {
-      console.warn('Player 已删除，但内部回收目录清理失败', error);
-    }
     return this.dashboard(
       workspaceId && this.controllers.has(workspaceId) ? workspaceId : undefined,
     );

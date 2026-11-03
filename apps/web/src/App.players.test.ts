@@ -261,7 +261,7 @@ describe('Player workspaces', () => {
     });
     await act(async () => button('删除 练习账号（bots）').click());
     expect(container.querySelector('dialog')?.textContent).toContain('从未运行');
-    await act(async () => button('永久删除本地数据').click());
+    await act(async () => button('从列表移除').click());
     await render();
     expect(input('#command').value).toBe('keep-unsaved-agent');
     expect(input('#history-opponent').value).toBe('keep-filter');
