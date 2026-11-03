@@ -2,11 +2,11 @@ import { ChartNoAxesCombined, Clapperboard, History, Play, Terminal } from 'luci
 import { useRef, type KeyboardEvent } from 'react';
 
 const tabs = [
-  { id: 'start', label: '启动', caption: '运行与参数', icon: Play },
-  { id: 'stats', label: '统计', caption: '真实对局概览', icon: ChartNoAxesCombined },
-  { id: 'history', label: '对局记录', caption: '历史与详情', icon: History },
-  { id: 'replay', label: '录像', caption: '本地对局回看', icon: Clapperboard },
-  { id: 'logs', label: '日志', caption: '实时输出', icon: Terminal },
+  { id: 'start', label: '启动', icon: Play },
+  { id: 'stats', label: '统计', icon: ChartNoAxesCombined },
+  { id: 'history', label: '对局记录', icon: History },
+  { id: 'replay', label: '录像', icon: Clapperboard },
+  { id: 'logs', label: '日志', icon: Terminal },
 ] as const;
 
 export type TabId = (typeof tabs)[number]['id'];
@@ -47,7 +47,7 @@ export function Navigation({ active, onChange }: Props) {
       role="tablist"
       aria-label="控制台页面"
     >
-      {tabs.map(({ id, label, caption, icon: Icon }, index) => {
+      {tabs.map(({ id, label, icon: Icon }, index) => {
         const selected = active === id;
         return (
           <button
@@ -71,13 +71,6 @@ export function Navigation({ active, onChange }: Props) {
           >
             <Icon size={15} strokeWidth={2} aria-hidden="true" />
             <span className="whitespace-nowrap">{label}</span>
-            <span
-              className={`ml-auto hidden text-[9px] font-normal lg:block ${
-                selected ? 'text-teal/70' : 'text-faint'
-              }`}
-            >
-              {caption}
-            </span>
           </button>
         );
       })}
