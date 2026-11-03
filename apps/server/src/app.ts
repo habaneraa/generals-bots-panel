@@ -5,9 +5,14 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { z, ZodError } from 'zod';
 import { DEFAULT_API_PORT, DEV_WEB_PORT, LOOPBACK_HOST } from '../../../config/runtime.js';
-import { matchFiltersSchema, matchQuerySchema } from '../../../packages/contracts/src/index.js';
+import {
+  logPageQuerySchema,
+  matchFiltersSchema,
+  matchQuerySchema,
+} from '../../../packages/contracts/src/index.js';
 import type { PlayerManager } from './player-manager.js';
 import { HttpError } from './errors.js';
+import { RunLog } from './storage/logs.js';
 import { replayAddressSchema } from './storage/replays.js';
 
 export async function createApp(manager: PlayerManager, webDir: string, port = DEFAULT_API_PORT) {
@@ -119,6 +124,16 @@ export async function createApp(manager: PlayerManager, webDir: string, port = D
       .type('application/gzip')
       .header('Content-Disposition', `attachment; filename="${gameId}.json.gz"`)
       .send(packed);
+  });
+  app.get('/api/runs/:id/logs', async (request) => {
+    const { playerId, ...query } = request.query as Record<string, unknown>;
+    const controller = manager.controller(z.string().optional().parse(playerId));
+    const { id } = z.object({ id: z.uuid() }).parse(request.params);
+    const { beforeId, afterId, limit } = logPageQuerySchema.parse(query);
+    if (!controller.repository.getRun(id)) throw new HttpError(404, '运行记录不存在');
+    const path = controller.repository.logPath(id);
+    if (!existsSync(path)) return { entries: [], hasMore: false };
+    return RunLog.page(path, { beforeId, afterId }, limit);
   });
   app.get('/api/runs/:id/logs/download', async (request, reply) => {
     const controller = manager.controller(selection(request.query));

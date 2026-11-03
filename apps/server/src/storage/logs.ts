@@ -1,5 +1,28 @@
-import { appendFileSync, closeSync, fstatSync, openSync, readSync } from 'node:fs';
-import type { LogEntry, LogLevel } from '../../../../packages/contracts/src/index.js';
+import {
+  appendFileSync,
+  closeSync,
+  createReadStream,
+  fstatSync,
+  openSync,
+  readSync,
+} from 'node:fs';
+import { createInterface } from 'node:readline';
+import type {
+  LogEntry,
+  LogLevel,
+  LogPage,
+  LogPageCursor,
+} from '../../../../packages/contracts/src/index.js';
+
+const TAIL_SIZE = 200;
+
+function parseEntry(line: string): LogEntry | null {
+  try {
+    return JSON.parse(line) as LogEntry;
+  } catch {
+    return null;
+  }
+}
 
 export class RunLog {
   private entries: LogEntry[] = [];
@@ -15,23 +38,27 @@ export class RunLog {
       const fd = openSync(path, 'r');
       try {
         const size = fstatSync(fd).size;
-        const start = Math.max(0, size - 512 * 1024);
-        const buffer = Buffer.alloc(size - start);
-        readSync(fd, buffer, 0, buffer.length, start);
-        const contents = buffer.toString('utf8');
+        let chunkSize = Math.min(size, 512 * 1024);
+        let contents = '';
+        let start = 0;
+        let entries: LogEntry[] = [];
+        let complete = false;
+        while (!complete) {
+          start = Math.max(0, size - chunkSize);
+          const buffer = Buffer.alloc(size - start);
+          readSync(fd, buffer, 0, buffer.length, start);
+          contents = buffer.toString('utf8');
+          const lines = contents.split('\n');
+          if (start > 0) lines.shift();
+          entries = lines
+            .filter(Boolean)
+            .map(parseEntry)
+            .filter((entry): entry is LogEntry => entry !== null);
+          complete = start === 0 || entries.length >= TAIL_SIZE || chunkSize === size;
+          if (!complete) chunkSize = Math.min(size, chunkSize * 2);
+        }
         this.needsNewline = size > 0 && !contents.endsWith('\n');
-        const lines = contents.split('\n');
-        if (start > 0) lines.shift();
-        this.entries = lines
-          .filter(Boolean)
-          .flatMap((line) => {
-            try {
-              return [JSON.parse(line) as LogEntry];
-            } catch {
-              return []; // 崩溃可能留下不完整的尾行，后续续写会另起一行。
-            }
-          })
-          .slice(-200);
+        this.entries = entries.slice(-TAIL_SIZE);
         this.sequence = this.entries.at(-1)?.id ?? 0;
       } finally {
         closeSync(fd);
@@ -47,18 +74,50 @@ export class RunLog {
       time: new Date().toISOString(),
       runId: this.runId,
       level,
-      message: message.slice(0, 16000),
+      message,
     };
     appendFileSync(this.path, `${this.needsNewline ? '\n' : ''}${JSON.stringify(entry)}\n`, {
       mode: 0o600,
     });
     this.needsNewline = false;
     this.entries.push(entry);
-    if (this.entries.length > 200) this.entries.shift();
+    if (this.entries.length > TAIL_SIZE) this.entries.shift();
     return entry;
   }
 
   tail(): LogEntry[] {
     return [...this.entries];
+  }
+
+  static async page(path: string, cursor: LogPageCursor, limit = TAIL_SIZE): Promise<LogPage> {
+    const input = createReadStream(path, { encoding: 'utf8' });
+    const lines = createInterface({ input, crlfDelay: Infinity });
+    const entries: LogEntry[] = [];
+    let hasMore = false;
+    try {
+      for await (const line of lines) {
+        const entry = parseEntry(line);
+        if (!entry) continue;
+        if (cursor.beforeId !== undefined) {
+          if (entry.id >= cursor.beforeId) continue;
+          entries.push(entry);
+          if (entries.length > limit + 1) entries.shift();
+        } else if (cursor.afterId !== undefined && entry.id > cursor.afterId) {
+          entries.push(entry);
+          if (entries.length > limit) {
+            hasMore = true;
+            break;
+          }
+        }
+      }
+    } finally {
+      lines.close();
+      input.destroy();
+    }
+    if (cursor.beforeId !== undefined) {
+      hasMore = entries.length > limit;
+      return { entries: entries.slice(-limit), hasMore };
+    }
+    return { entries: entries.slice(0, limit), hasMore };
   }
 }

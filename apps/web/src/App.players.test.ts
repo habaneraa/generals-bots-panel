@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   defaultConfig,
   type Dashboard,
+  type LogEntry,
   type MatchRecord,
   type Player,
 } from '../../../packages/contracts/src/index';
@@ -213,6 +214,106 @@ describe('Player workspaces', () => {
       .slice(-2)
       .map(([url]) => new URL(String(url), 'http://localhost'));
     expect(lastUrls.every((url) => url.searchParams.get('playerId') === 'player-b')).toBe(true);
+  });
+
+  it('uses the selected log level as a minimum severity threshold', async () => {
+    const dashboard = snapshot();
+    const levels = ['debug', 'info', 'warn', 'error'] as const;
+    const logs: LogEntry[] = levels.map((level, index) => ({
+      id: index + 1,
+      time: '2026-10-25T00:00:00.000Z',
+      runId: dashboard.state.run!.id,
+      level,
+      message: `message-${level}`,
+    }));
+    model = { ...model, dashboard: { ...dashboard, logs } };
+    await render();
+    await act(async () => button('日志').click());
+    const select = container.querySelector<HTMLSelectElement>('[aria-label="日志级别筛选"]')!;
+    const thresholds = {
+      debug: ['debug', 'info', 'warn', 'error'],
+      info: ['info', 'warn', 'error'],
+      warn: ['warn', 'error'],
+      error: ['error'],
+    } as const;
+    for (const [threshold, expected] of Object.entries(thresholds)) {
+      await act(async () => {
+        select.value = threshold;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      const visible = [...container.querySelectorAll('#panel-logs li')].map((entry) =>
+        levels.find((level) => entry.textContent?.includes(`message-${level}`)),
+      );
+      expect(visible).toEqual(expected);
+    }
+  });
+
+  it('retains the prior live window and fetches missing log IDs', async () => {
+    const dashboard = snapshot();
+    const makeEntry = (id: number): LogEntry => ({
+      id,
+      time: '2026-10-25T00:00:00.000Z',
+      runId: dashboard.state.run!.id,
+      level: 'info',
+      message: `entry-${id}`,
+    });
+    model = {
+      ...model,
+      dashboard: { ...dashboard, logs: [makeEntry(1), makeEntry(2)] },
+    };
+    const logs = vi.spyOn(api, 'logs').mockResolvedValueOnce({
+      entries: [makeEntry(3), makeEntry(4)],
+      hasMore: false,
+    });
+    await render();
+    await act(async () => button('日志').click());
+    model = {
+      ...model,
+      dashboard: { ...dashboard, logs: [makeEntry(5)] },
+    };
+    await act(async () => render());
+    expect(logs).toHaveBeenCalledWith(
+      dashboard.state.run!.id,
+      { afterId: 2 },
+      expect.any(AbortSignal),
+      'player-a',
+    );
+    expect(container.querySelector('#panel-logs footer')?.textContent).toContain('5 / 5 条');
+    for (let id = 1; id <= 5; id++)
+      expect(container.querySelector('#panel-logs')?.textContent).toContain(`entry-${id}`);
+  });
+
+  it('loads older log pages without limiting the rendered history to 200 entries', async () => {
+    const dashboard = snapshot();
+    const makeEntry = (id: number): LogEntry => ({
+      id,
+      time: '2026-10-25T00:00:00.000Z',
+      runId: dashboard.state.run!.id,
+      level: 'info',
+      message: `entry-${id}`,
+    });
+    model = {
+      ...model,
+      dashboard: {
+        ...dashboard,
+        logs: Array.from({ length: 200 }, (_, index) => makeEntry(index + 201)),
+      },
+    };
+    const logs = vi.spyOn(api, 'logs').mockResolvedValueOnce({
+      entries: Array.from({ length: 200 }, (_, index) => makeEntry(index + 1)),
+      hasMore: false,
+    });
+    await render();
+    await act(async () => button('日志').click());
+    await act(async () => button('加载更早日志').click());
+    expect(logs).toHaveBeenCalledWith(
+      dashboard.state.run!.id,
+      { beforeId: 201 },
+      expect.any(AbortSignal),
+      'player-a',
+    );
+    expect(container.querySelector('#panel-logs footer')?.textContent).toContain('400 / 400 条');
+    expect(container.querySelector('#panel-logs')?.textContent).not.toContain('加载更早日志');
   });
 
   it('scopes history replay links, log downloads and the switcher to the selected Player', async () => {

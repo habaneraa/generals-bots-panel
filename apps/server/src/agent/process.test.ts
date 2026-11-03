@@ -62,6 +62,21 @@ describe('external agent process', () => {
     }
   });
 
+  it('preserves long stderr output in ordered diagnostic chunks', async () => {
+    const diagnostics: string[] = [];
+    const agent = await AgentProcess.start(
+      {
+        ...defaultConfig,
+        command: process.execPath,
+        args: ['-e', 'process.stderr.write("x".repeat(60001))'],
+      },
+      (message) => diagnostics.push(message),
+    );
+    await agent.close();
+    expect(diagnostics.join('')).toBe('x'.repeat(60001));
+    expect(diagnostics.every((message) => message.length <= 16000)).toBe(true);
+  });
+
   it('aborts a pending inference and keeps stderr out of stdout', async () => {
     const diagnostics: string[] = [];
     const agent = await AgentProcess.start(

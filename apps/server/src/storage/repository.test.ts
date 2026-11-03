@@ -130,6 +130,25 @@ describe('local persistence', () => {
     expect(reopened.write('info', 'restart').id).toBe(206);
   });
 
+  it('pages complete JSONL history and preserves long messages across restart', async () => {
+    const path = join(temp(), 'fixture.jsonl');
+    const logger = new RunLog('fixture', path);
+    for (let i = 0; i < 205; i++) logger.write('debug', `turn ${i}`);
+    const longMessage = 'x'.repeat(600_000);
+    logger.write('error', longMessage);
+
+    const before = await RunLog.page(path, { beforeId: 206 }, 2);
+    expect(before.entries.map(({ id }) => id)).toEqual([204, 205]);
+    expect(before.hasMore).toBe(true);
+    const after = await RunLog.page(path, { afterId: 204 }, 2);
+    expect(after.entries.map(({ id }) => id)).toEqual([205, 206]);
+    expect(after.hasMore).toBe(false);
+
+    const reopened = new RunLog('fixture', path);
+    expect(reopened.tail().at(-1)?.message).toBe(longMessage);
+    expect(reopened.write('info', 'after large message').id).toBe(207);
+  });
+
   it('separates new entries from an incomplete trailing JSONL line after restart', () => {
     const path = join(temp(), 'fixture.jsonl');
     const logger = new RunLog('fixture', path);

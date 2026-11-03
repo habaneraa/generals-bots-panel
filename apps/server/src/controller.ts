@@ -50,7 +50,7 @@ export class Controller {
           this.writeLog(
             message.startsWith('本地录像')
               ? 'warn'
-              : message.startsWith('自动投降：')
+              : message.startsWith('自动投降：') || message.startsWith('Connected to ')
                 ? 'info'
                 : 'debug',
             message,

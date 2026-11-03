@@ -31,20 +31,28 @@ export class AgentProcess {
     this.child.stdout.setEncoding('utf8');
     this.child.stderr.setEncoding('utf8');
     this.child.stdout.on('data', (chunk: string) => this.onStdout(chunk));
+    const reportDiagnostic = (message: string) => {
+      for (let offset = 0; offset < message.length; offset += 16000) {
+        onDiagnostic(message.slice(offset, offset + 16000));
+      }
+    };
     this.child.stderr.on('data', (chunk: string) => {
       this.stderr += chunk;
-      const lines = this.stderr.split('\n');
-      this.stderr = lines.pop() ?? '';
-      for (const line of lines) if (line.trim()) onDiagnostic(line.slice(0, 16000));
-      if (this.stderr.length > 16000) {
-        onDiagnostic(this.stderr.slice(0, 16000));
-        this.stderr = '';
+      let boundary: number;
+      while ((boundary = this.stderr.indexOf('\n')) !== -1) {
+        const line = this.stderr.slice(0, boundary).replace(/\r$/, '');
+        this.stderr = this.stderr.slice(boundary + 1);
+        if (line.trim()) reportDiagnostic(line);
+      }
+      while (this.stderr.length >= 16000) {
+        reportDiagnostic(this.stderr.slice(0, 16000));
+        this.stderr = this.stderr.slice(16000);
       }
     });
     this.child.on('error', (error) => this.fail(error));
     this.child.stdin.on('error', (error) => this.fail(error));
     this.child.on('close', (code, signal) => {
-      if (this.stderr.trim()) onDiagnostic(this.stderr.slice(0, 16000));
+      if (this.stderr.length > 0) reportDiagnostic(this.stderr);
       if (!this.closing) this.fail(new Error(`agent 已退出（code=${code}, signal=${signal}）`));
     });
     this.child.stdout.on('end', () => {

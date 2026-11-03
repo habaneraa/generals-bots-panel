@@ -3,6 +3,8 @@ import type {
   Dashboard,
   MatchFilters,
   MatchPage,
+  LogPage,
+  LogPageCursor,
   PlayerDetails,
   PlayerInput,
   RunConfig,
@@ -61,6 +63,19 @@ export const api = {
     request(playerId !== undefined ? playerPath('/api/dashboard', playerId) : '/api/dashboard', {
       signal,
     }),
+  logs: (
+    runId: string,
+    cursor: LogPageCursor,
+    signal: AbortSignal,
+    playerId: string,
+  ): Promise<LogPage> => {
+    const query = new URLSearchParams();
+    if (cursor.beforeId !== undefined) query.set('beforeId', String(cursor.beforeId));
+    if (cursor.afterId !== undefined) query.set('afterId', String(cursor.afterId));
+    return request(playerPath(`/api/runs/${encodeURIComponent(runId)}/logs?${query}`, playerId), {
+      signal,
+    });
+  },
   addPlayer: (input: PlayerInput, signal: AbortSignal): Promise<Dashboard> =>
     mutation('/api/players', 'POST', input, signal),
   selectPlayer: (playerId: string, signal: AbortSignal): Promise<Dashboard> =>

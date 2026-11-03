@@ -251,7 +251,9 @@ describe('Player registry and API ownership', () => {
       config: first.repository.getConfig(),
       error: null,
     });
-    new RunLog(runId, first.repository.logPath(runId)).write('info', 'only first player');
+    const runLog = new RunLog(runId, first.repository.logPath(runId));
+    runLog.write('info', 'only first player');
+    for (let i = 0; i < 205; i++) runLog.write('debug', `entry-${i}`);
     first.repository.putMatch(match(runId));
     const recorder = new ReplayRecorder('generals');
     recorder.capture({ gameId: 'private-game', attackIndex: 0, observation: fixtureObservation() });
@@ -288,6 +290,41 @@ describe('Player registry and API ownership', () => {
       headers,
     });
     expect(log.body).toContain('only first player');
+    const older = await app.inject({
+      url: `/api/runs/${runId}/logs?beforeId=3&limit=1&playerId=${a.id}`,
+      headers,
+    });
+    expect(older.statusCode).toBe(200);
+    expect(older.json()).toMatchObject({ entries: [{ id: 2 }], hasMore: true });
+    const newer = await app.inject({
+      url: `/api/runs/${runId}/logs?afterId=204&limit=1&playerId=${a.id}`,
+      headers,
+    });
+    expect(newer.json()).toMatchObject({ entries: [{ id: 205 }], hasMore: true });
+    expect(
+      (
+        await app.inject({
+          url: `/api/runs/${runId}/logs?beforeId=3&limit=1&playerId=${b.id}`,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          url: `/api/runs/${runId}/logs?playerId=${a.id}`,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          url: `/api/runs/${runId}/logs?beforeId=3&afterId=2&playerId=${a.id}`,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(400);
     expect((await app.inject({ url: '/api/players', headers })).json()).toHaveLength(2);
   });
 

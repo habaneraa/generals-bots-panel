@@ -57,6 +57,24 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
 }
+export const logPageQuerySchema = z
+  .object({
+    beforeId: z.coerce.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
+    afterId: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(200),
+  })
+  .strict()
+  .superRefine((query, ctx) => {
+    if ((query.beforeId === undefined) === (query.afterId === undefined)) {
+      ctx.addIssue({ code: 'custom', message: '必须指定 beforeId 或 afterId，且不能同时指定' });
+    }
+  });
+export type LogPageQuery = z.infer<typeof logPageQuerySchema>;
+export type LogPageCursor = Pick<LogPageQuery, 'beforeId' | 'afterId'>;
+export interface LogPage {
+  entries: LogEntry[];
+  hasMore: boolean;
+}
 export interface MatchPlayerSnapshot {
   index: number;
   isSelf: boolean;
