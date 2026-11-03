@@ -10,7 +10,6 @@ type Props = {
   config: RunConfig;
   running: boolean;
   pending: PendingAction;
-  actionError: string | null;
   onSave: (config: RunConfig) => Promise<boolean>;
   onStart: (config: RunConfig) => Promise<boolean>;
 };
@@ -26,7 +25,7 @@ function SectionLabel({ index, children }: { index: string; children: string }) 
   );
 }
 
-export function ConfigPanel({ config, running, pending, actionError, onSave, onStart }: Props) {
+export function ConfigPanel({ config, running, pending, onSave, onStart }: Props) {
   const { draft, errors, dirty, update, validate } = useRunConfig(config);
   const locked = running || pending !== null;
   const badge = running ? (
@@ -247,11 +246,6 @@ export function ConfigPanel({ config, running, pending, actionError, onSave, onS
       {Object.keys(errors).length > 0 && (
         <div className="px-4 pb-3">
           <Notice>参数校验未通过，请检查标红的字段后重试。</Notice>
-        </div>
-      )}
-      {actionError && (
-        <div className="px-4 pb-3">
-          <Notice>{actionError}</Notice>
         </div>
       )}
     </section>

@@ -213,7 +213,6 @@ function DashboardContent({
                   config={dashboard.config}
                   running={running}
                   pending={pending}
-                  actionError={actionError}
                   onSave={onSave}
                   onStart={onStart}
                 />
