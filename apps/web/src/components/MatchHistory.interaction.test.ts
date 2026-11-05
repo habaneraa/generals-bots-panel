@@ -157,6 +157,7 @@ describe('App star history refresh key', () => {
         agentLatencyMs: null,
         completedGames: 0,
         nextGameAt: null,
+        autoRestartAt: null,
       },
       config: defaultConfig,
       stats: { total: 1, won: 0, lost: 0, draw: 0, interrupted: 0, winRate: 0 },

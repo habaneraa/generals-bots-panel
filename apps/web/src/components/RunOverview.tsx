@@ -144,6 +144,11 @@ export function RunOverview({ state, pending, onStop }: Props) {
           <span className="min-w-0 break-words">
             {state.run?.error ??
               `对手：${state.match?.opponent || '等待匹配'} · ${state.match?.server} 服务器`}
+            {state.phase === 'failed' && state.autoRestartAt && (
+              <span className="ml-1 text-warn" role="status" aria-live="polite">
+                · 将于 {formatTime(state.autoRestartAt)} 自动重启
+              </span>
+            )}
           </span>
           {replay && (
             <a

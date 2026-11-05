@@ -2,7 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RunState } from '../../../../packages/contracts/src/index';
+import { defaultConfig, type RunState } from '../../../../packages/contracts/src/index';
 import { RunOverview } from './RunOverview';
 
 const startedAt = '2026-10-26T14:30:00.000Z';
@@ -19,6 +19,7 @@ function state(overrides: Partial<RunState> = {}): RunState {
     agentLatencyMs: null,
     completedGames: 0,
     nextGameAt: null,
+    autoRestartAt: null,
     ...overrides,
   };
 }
@@ -101,5 +102,25 @@ describe('RunOverview status', () => {
     await render(state({ phase }));
     expect(heading()).toBe(`${label}（23 秒）`);
     expect(container.querySelector('button')!.textContent).toContain('启动运行');
+  });
+
+  it('announces a scheduled auto-restart only while failed', async () => {
+    await render(
+      state({
+        phase: 'failed',
+        run: {
+          id: 'run-1',
+          startedAt,
+          endedAt: startedAt,
+          phase: 'failed',
+          error: 'boom',
+          config: defaultConfig,
+        },
+        autoRestartAt: '2026-10-26T14:31:23.000Z',
+      }),
+    );
+    expect(container.textContent).toContain('自动重启');
+    await render(state({ phase: 'stopped', autoRestartAt: '2026-10-26T14:31:23.000Z' }));
+    expect(container.textContent).not.toContain('自动重启');
   });
 });

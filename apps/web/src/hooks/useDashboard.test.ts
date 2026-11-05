@@ -51,6 +51,7 @@ function snapshot(turn = 0, playerId = 'player-a'): Dashboard {
       agentLatencyMs: null,
       completedGames: 0,
       nextGameAt: null,
+      autoRestartAt: null,
     },
     config: { ...defaultConfig, command: `agent-${turn}` },
     stats: { total: 0, won: 0, lost: 0, draw: 0, interrupted: 0, winRate: 0 },

@@ -222,6 +222,13 @@ export function ConfigPanel({ config, running, pending, onSave, onStart }: Props
                 checked={draft.dryRun}
                 onChange={(value) => update('dryRun', value)}
               />
+              <ToggleField
+                id="autoRestart"
+                label="失败自动重启"
+                hint="运行失败后在 failed 停留满 60 秒，自动按原配置从头重启；手动停止不会重启。"
+                checked={draft.autoRestart}
+                onChange={(value) => update('autoRestart', value)}
+              />
             </div>
           </div>
         </fieldset>

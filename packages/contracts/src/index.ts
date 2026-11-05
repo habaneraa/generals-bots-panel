@@ -36,6 +36,7 @@ export const runConfigSchema = z
     cooldownMs: z.number().int().min(0).max(300000).default(15000),
     maxGames: z.number().int().min(1).max(10000).default(10),
     dryRun: z.boolean().default(false),
+    autoRestart: z.boolean().default(false),
   })
   .strict()
   .superRefine((config, ctx) => {
@@ -170,6 +171,8 @@ export interface RunState {
   agentLatencyMs: number | null;
   completedGames: number;
   nextGameAt: string | null;
+  /** 开启 autoRestart 时，失败后计划自动重启的时刻；否则为 null。 */
+  autoRestartAt: string | null;
 }
 export interface Stats {
   total: number;

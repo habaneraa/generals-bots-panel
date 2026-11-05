@@ -57,9 +57,11 @@ idle/stopped/failed → starting → queueing → playing → cooldown → queue
                                      └────────────→ stopped
 任意活动状态 → stopping → stopped
 任意异常状态 → failed
+failed（autoRestart 开启且停留 ≥60s）→ starting（沿用上次配置）
 ```
 
 - 每个 Player 由独立 Controller 管理一个运行任务，可跨 HTTP 请求持续存在。同一 Player 重复启动或运行时修改参数返回 409；切换 Player 不停止其他 Controller。
+- 自动重启是启动配置的一部分（`autoRestart`）。运行失败进入 `failed` 后，仅当开关开启且在该状态停留满 60 秒，Controller 才用同一份配置整轮重启（新建运行记录、从 `starting` 开始）；手动停止、重新启动或在 `failed` 期间保存参数都会取消已排定的重启，`failed` 之外的状态永不触发。重启无次数上限或退避，配置损坏时会持续按 60 秒重试。
 - 只有一个待处理 agent observation；stdout 无请求 ID，超时后流不能安全复用，必须停止。
 - WebSocket 消息与推理异步推进。推理完成后检查当前游戏与回合；过期动作不发送。
 - 待执行攻击通过服务器 `attackIndex` 确认；未确认时不继续堆积动作。

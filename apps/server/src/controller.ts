@@ -33,6 +33,7 @@ export class Controller {
   private log: RunLog | null;
   private task: Promise<void> | null = null;
   private abort: AbortController | null = null;
+  private autoRestartTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<() => void>();
   private closed = false;
   private notifyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -71,6 +72,7 @@ export class Controller {
       agentLatencyMs: null,
       completedGames: 0,
       nextGameAt: null,
+      autoRestartAt: null,
     };
     this.log = run ? new RunLog(run.id, repository.logPath(run.id)) : null;
   }
@@ -135,13 +137,24 @@ export class Controller {
     if (this.active) throw new HttpError(409, '请停止当前运行后再修改参数');
     const config = runConfigSchema.parse(value);
     this.repository.saveConfig(config);
+    // 失败窗口里保存可能改变或关闭自动重启：清掉已排定的重启，由本次保存决定后续。
+    this.cancelAutoRestart();
     this.notify();
     return config;
   }
 
   start(value: unknown): Dashboard {
     if (this.active) throw new HttpError(409, '已有运行中的 agent');
+    // saveConfig 已清掉失败的自动重启，这里直接开始新一轮。
     const config = this.saveConfig(value);
+    this.begin(config);
+    return this.dashboard();
+  }
+
+  // 失败后在 failed 停留满 restartDelayMs 才自动重启，避免配置损坏时快速崩溃循环。
+  private restartDelayMs = 60_000;
+
+  private begin(config: RunConfig): void {
     const run = {
       id: randomUUID(),
       startedAt: new Date().toISOString(),
@@ -161,18 +174,43 @@ export class Controller {
       agentLatencyMs: null,
       completedGames: 0,
       nextGameAt: null,
+      autoRestartAt: null,
     };
     this.abort = new AbortController();
     this.writeLog('info', `启动 WebSocket 会话：${this.player.server}`);
     this.task = this.execute(config, this.abort.signal).finally(() => {
       this.task = null;
       this.abort = null;
+      this.maybeScheduleRestart(config);
       this.notify();
     });
-    return this.dashboard();
+  }
+
+  // 仅当状态为 failed、开关开启且已停留超过阈值时，用同一份配置整轮重启。
+  private maybeScheduleRestart(config: RunConfig): void {
+    if (this.closed) return;
+    if (!config.autoRestart || this.state.phase !== 'failed') return;
+    const failedAt = Date.parse(this.state.phaseStartedAt);
+    const wait = this.restartDelayMs - (Date.now() - failedAt);
+    if (wait > 0) {
+      this.state.autoRestartAt = new Date(failedAt + this.restartDelayMs).toISOString();
+      this.writeLog('info', `运行失败，${Math.ceil(wait / 1000)} 秒后自动重启`);
+      const timer = setTimeout(() => {
+        this.autoRestartTimer = null;
+        if (this.closed || this.state.phase !== 'failed') return;
+        this.writeLog('info', '自动重启：沿用上次运行配置重新开始');
+        this.begin(config);
+      }, wait);
+      timer.unref();
+      this.autoRestartTimer = timer;
+      return;
+    }
+    this.writeLog('info', '自动重启：沿用上次运行配置重新开始');
+    this.begin(config);
   }
 
   async stop(): Promise<Dashboard> {
+    this.cancelAutoRestart();
     if (this.task) {
       this.setPhase('stopping');
       this.writeLog('info', '收到停止请求，取消等待并关闭 agent / WebSocket');
@@ -180,6 +218,18 @@ export class Controller {
       await this.task;
     }
     return this.dashboard();
+  }
+
+  private cancelAutoRestart(): void {
+    if (this.autoRestartTimer) {
+      clearTimeout(this.autoRestartTimer);
+      this.autoRestartTimer = null;
+    }
+    if (this.state.autoRestartAt !== null) {
+      this.state.autoRestartAt = null;
+      // 仅清理了定时器也可能发生在 task 已结束的 failed 窗口，需主动广播。
+      this.notify();
+    }
   }
 
   private newMatch(frame: GameFrame | GameEnd, config: RunConfig): MatchRecord {

@@ -17,6 +17,7 @@ const fieldLabels: Record<keyof RunConfig, string> = {
   cooldownMs: '对局间隔',
   maxGames: '最大对局数',
   dryRun: 'Dry-run',
+  autoRestart: '失败自动重启',
 };
 
 function toDraft(config: RunConfig): RunDraft {

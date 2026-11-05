@@ -469,6 +469,82 @@ describe('run lifecycle with isolated test inputs', () => {
     });
   });
 
+  it('schedules an auto-restart only while failed with the toggle on', async () => {
+    const { controller } = await setup();
+    (controller as unknown as { restartDelayMs: number }).restartDelayMs = 200;
+    controller.start({
+      ...defaultConfig,
+      autoRestart: true,
+      command: '/nonexistent-panel-test-executable',
+    });
+    await idle(controller);
+    const state = controller.dashboard().state;
+    expect(state.phase).toBe('failed');
+    expect(state.autoRestartAt).not.toBeNull();
+    const failedRunId = state.run!.id;
+    // 手动停止会取消已排定的自动重启：等到超过延迟也不应新建运行。
+    await controller.stop();
+    expect(controller.dashboard().state.autoRestartAt).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(controller.dashboard().state.run?.id).toBe(failedRunId);
+    expect(controller.active).toBe(false);
+  });
+
+  it('saving config during the failed window cancels the pending restart', async () => {
+    const { controller } = await setup();
+    (controller as unknown as { restartDelayMs: number }).restartDelayMs = 200;
+    controller.start({
+      ...defaultConfig,
+      autoRestart: true,
+      command: '/nonexistent-panel-test-executable',
+    });
+    await idle(controller);
+    const failedRunId = controller.dashboard().state.run!.id;
+    expect(controller.dashboard().state.autoRestartAt).not.toBeNull();
+    controller.saveConfig({ ...defaultConfig, autoRestart: false });
+    expect(controller.dashboard().state.autoRestartAt).toBeNull();
+    // 已取消，等到超过延迟也不重启。
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(controller.dashboard().state.run?.id).toBe(failedRunId);
+  });
+
+  it('auto-restarts from failed with the same config after the delay', async () => {
+    const { controller } = await setup();
+    (controller as unknown as { restartDelayMs: number }).restartDelayMs = 200;
+    controller.start({
+      ...defaultConfig,
+      autoRestart: true,
+      command: '/nonexistent-panel-test-executable',
+    });
+    await idle(controller);
+    const firstRunId = controller.dashboard().state.run!.id;
+    // 自动重启会新建一次运行（新 run id），沿用同一份配置。
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsubscribe();
+        reject(new Error('自动重启未在预期时间内触发'));
+      }, 5000);
+      const unsubscribe = controller.subscribe(() => {
+        if (controller.dashboard().state.run?.id !== firstRunId) {
+          clearTimeout(timer);
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+    expect(controller.dashboard().state.run?.config.autoRestart).toBe(true);
+    await controller.stop();
+    expect(controller.dashboard().state.autoRestartAt).toBeNull();
+  });
+
+  it('does not auto-restart when the toggle is off', async () => {
+    const { controller } = await setup();
+    controller.start({ ...defaultConfig, command: '/nonexistent-panel-test-executable' });
+    await idle(controller);
+    expect(controller.dashboard().state.phase).toBe('failed');
+    expect(controller.dashboard().state.autoRestartAt).toBeNull();
+  });
+
   it('records a game ending before an actionable frame without starting an agent', async () => {
     const game: GameConnection = {
       connect: async () => {},

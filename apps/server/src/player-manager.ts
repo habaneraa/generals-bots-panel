@@ -100,6 +100,7 @@ export class PlayerManager {
         agentLatencyMs: null,
         completedGames: 0,
         nextGameAt: null,
+        autoRestartAt: null,
       },
       config: structuredClone(defaultConfig),
       stats: { total: 0, won: 0, lost: 0, draw: 0, interrupted: 0, winRate: 0 },
