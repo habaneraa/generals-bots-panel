@@ -108,6 +108,13 @@ export async function createApp(manager: PlayerManager, webDir: string, port = D
       .controller(z.string().optional().parse(playerId))
       .repository.starHistory(matchFiltersSchema.parse(query));
   });
+  app.get('/api/matches/:id', async (request) => {
+    const controller = manager.controller(selection(request.query));
+    const { id } = z.object({ id: z.string() }).parse(request.params);
+    const match = controller.repository.getMatch(id);
+    if (!match) throw new HttpError(404, '对局记录不存在');
+    return match;
+  });
   app.get('/api/replays/:server/:gameId', async (request) => {
     const controller = manager.controller(selection(request.query));
     const { server, gameId } = replayAddressSchema.parse(request.params);

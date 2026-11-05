@@ -3,6 +3,7 @@ import type {
   Dashboard,
   MatchFilters,
   MatchPage,
+  MatchRecord,
   LogPage,
   LogPageCursor,
   PlayerDetails,
@@ -114,6 +115,8 @@ export const api = {
     }
     return request(playerPath(`/api/matches?${query}`, playerId), { signal });
   },
+  match: (id: string, signal: AbortSignal, playerId: string): Promise<MatchRecord> =>
+    request(playerPath(`/api/matches/${encodeURIComponent(id)}`, playerId), { signal }),
   starHistory: (
     filters: MatchFilters,
     signal: AbortSignal,

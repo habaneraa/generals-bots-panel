@@ -101,6 +101,11 @@ export class Repository {
       );
   }
 
+  getMatch(id: string): MatchRecord | null {
+    const row = this.db.prepare('SELECT payload FROM matches WHERE id = ?').get(id);
+    return row ? (JSON.parse(String(row.payload)) as MatchRecord) : null;
+  }
+
   private matchWhere(filters: MatchFilters) {
     const conditions = ['1 = 1'];
     const params: (string | number)[] = [];

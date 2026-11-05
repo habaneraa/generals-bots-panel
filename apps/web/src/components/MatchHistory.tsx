@@ -1,6 +1,8 @@
 import { ChevronLeft, ChevronRight, History, Inbox } from 'lucide-react';
-import { useState } from 'react';
-import type { MatchRecord } from '../../../../packages/contracts/src/index';
+import { useEffect, useState } from 'react';
+import type { MatchRecord, StarHistoryItem } from '../../../../packages/contracts/src/index';
+import { api, errorMessage, isAbortError } from '../api/client';
+import { usePlayerId } from '../hooks/PlayerScope';
 import { useMatchHistory } from '../hooks/useMatchHistory';
 import { useStarHistory } from '../hooks/useStarHistory';
 import { HistoryFilters } from './HistoryFilters';
@@ -19,6 +21,46 @@ export function MatchHistory({ refreshKey, starHistoryRefreshKey }: Props) {
     useMatchHistory(refreshKey);
   const starHistory = useStarHistory(filters, starHistoryRefreshKey);
   const [selected, setSelected] = useState<MatchRecord | null>(null);
+  const playerId = usePlayerId();
+  const [target, setTarget] = useState<{ id: string; playerId: string } | null>(null);
+  const [detail, setDetail] = useState<{
+    target: NonNullable<typeof target>;
+    match?: MatchRecord;
+    error?: string;
+  } | null>(null);
+  const currentTarget = target?.playerId === playerId ? target : null;
+  const currentDetail = detail?.target === currentTarget ? detail : null;
+
+  useEffect(() => {
+    if (!target || !playerId || target.playerId !== playerId) return;
+    const controller = new AbortController();
+    let active = true;
+    void api.match(target.id, controller.signal, playerId).then(
+      (match) => {
+        if (active) setDetail({ target, match });
+      },
+      (error: unknown) => {
+        if (active && !isAbortError(error)) setDetail({ target, error: errorMessage(error) });
+      },
+    );
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [target, playerId]);
+
+  function openHistoryMatch(match: StarHistoryItem) {
+    if (!playerId) return;
+    setSelected(null);
+    setTarget({ id: match.id, playerId });
+  }
+
+  function closeDetails() {
+    setTarget(null);
+    setSelected(null);
+  }
+
+  const openedMatch = currentTarget ? (currentDetail?.match ?? null) : selected;
   const hasFilters = Object.values(filters).some((value) => value !== undefined);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / (data?.pageSize ?? 20)));
 
@@ -46,7 +88,34 @@ export function MatchHistory({ refreshKey, starHistoryRefreshKey }: Props) {
 
       <HistoryFilters onApply={applyFilters} />
 
-      {starHistory.data && <StarHistoryChart matches={starHistory.data.items} />}
+      {starHistory.data && (
+        <StarHistoryChart matches={starHistory.data.items} onOpenMatch={openHistoryMatch} />
+      )}
+      {currentTarget && !currentDetail && (
+        <div className="flex items-center gap-2 px-4 py-3 text-[11px] text-muted" role="status">
+          <Spinner /> 正在打开对局…
+          <button type="button" className="btn btn-ghost btn-sm" onClick={closeDetails}>
+            取消
+          </button>
+        </div>
+      )}
+      {currentDetail?.error && (
+        <div className="px-4 py-2.5">
+          <Notice
+            action={
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setTarget({ ...currentTarget! })}
+              >
+                重试
+              </button>
+            }
+          >
+            对局读取失败：{currentDetail.error}
+          </Notice>
+        </div>
+      )}
       {!starHistory.data && starHistory.loading && (
         <div className="flex items-center gap-2 px-4 py-3 text-[11px] text-muted" role="status">
           <Spinner /> 正在读取 Star 历史…
@@ -103,7 +172,14 @@ export function MatchHistory({ refreshKey, starHistoryRefreshKey }: Props) {
             </thead>
             <tbody>
               {data.items.map((match) => (
-                <MatchHistoryRow key={match.id} match={match} onOpen={() => setSelected(match)} />
+                <MatchHistoryRow
+                  key={match.id}
+                  match={match}
+                  onOpen={() => {
+                    setTarget(null);
+                    setSelected(match);
+                  }}
+                />
               ))}
             </tbody>
           </table>
@@ -155,8 +231,8 @@ export function MatchHistory({ refreshKey, starHistoryRefreshKey }: Props) {
       </footer>
 
       <MatchDetailsModal
-        match={data?.items.find((match) => match.id === selected?.id) ?? selected}
-        onClose={() => setSelected(null)}
+        match={data?.items.find((match) => match.id === openedMatch?.id) ?? openedMatch}
+        onClose={closeDetails}
       />
     </section>
   );

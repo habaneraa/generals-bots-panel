@@ -109,14 +109,60 @@ describe('StarHistoryChart', () => {
     expect(groups.size).toBe(3);
   });
 
-  it('keeps the single-account chart free of metric cards and decorative labels', () => {
+  it('renders the default game axis, compact summary and accessible navigation controls', () => {
     const html = renderToStaticMarkup(createElement(StarHistoryChart, { matches: [match()] }));
     expect(html).toContain('Star 历史');
-    expect(html).not.toContain('最近赛后');
+    expect(html).toContain('13.5');
+    expect(html).toContain('最新采样');
+    expect(html).toContain('历史最高');
+    expect(html).toContain('采样覆盖');
+    expect(html).toMatch(/aria-pressed="true"[^>]*>局数<\/button>/);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>时间<\/button>/);
+    expect(html).toContain('最近 30 局');
+    expect(html).toContain('框选');
+    expect(html).toContain('全部');
+    expect(html).toContain('纵轴自动缩放 · 每局等距');
+    expect(html).toContain('role="img" tabindex="0"');
+    expect(html).toContain('左右键选择对局，Enter 打开');
+    expect(html).toContain('Ctrl + 滚轮缩放');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('查看对局');
+    expect(html).toContain('缺失区间');
+    expect(html).toContain('采样来源变化时断开连线');
     expect(html).not.toContain('当前页');
     expect(html).not.toContain('绿涨');
     expect(html).not.toContain('场有评分记录');
-    expect(html).not.toContain('shadow');
+  });
+
+  it('enables the footer opener only when a callback is provided', () => {
+    const withoutCallback = renderToStaticMarkup(
+      createElement(StarHistoryChart, { matches: [match()] }),
+    );
+    const withCallback = renderToStaticMarkup(
+      createElement(StarHistoryChart, { matches: [match()], onOpenMatch: () => {} }),
+    );
+    expect(withoutCallback).toMatch(/<button[^>]*disabled=""[^>]*>查看对局/);
+    expect(withCallback).not.toMatch(/<button[^>]*disabled=""[^>]*>查看对局/);
+    expect(withCallback).toMatch(/<button[^>]*>查看对局/);
+  });
+
+  it('renders one independent chart per account and keeps missing-score games in coverage', () => {
+    const otherAccount = match({ id: 'other-account', runId: 'other-run' });
+    otherAccount.rating = { ...otherAccount.rating!, username: 'other' };
+    const html = renderToStaticMarkup(
+      createElement(StarHistoryChart, {
+        matches: [
+          match(),
+          match({ id: 'missing-score', rating: undefined }),
+          otherAccount,
+          match({ id: 'other-server', server: 'bots' }),
+        ],
+      }),
+    );
+    expect(html.match(/role="img"/g)).toHaveLength(3);
+    expect(html).toContain('player 的完整 Star 历史图');
+    expect(html).toContain('other 的完整 Star 历史图');
+    expect(html).toContain(' / 2 局');
   });
 
   it('shows only the necessary empty state when no usable observations exist', () => {

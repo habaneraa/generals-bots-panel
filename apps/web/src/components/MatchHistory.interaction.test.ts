@@ -46,12 +46,12 @@ let root: Root;
 let container: HTMLDivElement;
 let history: ReturnType<typeof useMatchHistory>;
 
-async function render() {
+async function render(playerId = 'player-a') {
   await act(async () =>
     root.render(
       createElement(
         PlayerScope.Provider,
-        { value: 'player-a' },
+        { value: playerId },
         createElement(MatchHistory, { refreshKey: 'refresh', starHistoryRefreshKey: 'rating' }),
       ),
     ),
@@ -140,6 +140,104 @@ describe('MatchHistory star history', () => {
       outcome: 'won',
       playerId: 'player-a',
     });
+  });
+});
+
+describe('Star chart match navigation', () => {
+  function choose(match: MatchRecord) {
+    const props = vi.mocked(StarHistoryChart).mock.lastCall![0];
+    return act(async () => props.onOpenMatch!(match));
+  }
+
+  function deferredMatch() {
+    let resolve!: (response: Response) => void;
+    const promise = new Promise<Response>((done) => {
+      resolve = done;
+    });
+    return {
+      promise,
+      resolve: (match: MatchRecord) => resolve(new Response(JSON.stringify(match))),
+    };
+  }
+
+  it('opens an exact off-page match without changing pagination or filters', async () => {
+    await render();
+    const older = { ...record(), id: 'off-page', gameId: 'older-game', outcome: 'won' as const };
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(older)));
+    await choose(older);
+    const url = new URL(String(vi.mocked(fetch).mock.lastCall![0]), 'http://localhost');
+    expect(url.pathname).toBe('/api/matches/off-page');
+    expect(url.searchParams.get('playerId')).toBe('player-a');
+    expect(container.querySelector('dialog[open]')?.textContent).toContain('older-game');
+    expect(history.setPage).not.toHaveBeenCalled();
+    expect(history.applyFilters).not.toHaveBeenCalled();
+    await act(async () => button('关闭对局详情').click());
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  it('cancels a previous selection and ignores its late result', async () => {
+    await render();
+    const first = deferredMatch();
+    const second = deferredMatch();
+    const a = { ...record(), id: 'a', gameId: 'game-a' };
+    const b = { ...record(), id: 'b', gameId: 'game-b' };
+    vi.mocked(fetch).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    await choose(a);
+    const firstSignal = vi.mocked(fetch).mock.lastCall![1]!.signal!;
+    expect(container.textContent).toContain('正在打开对局');
+    await choose(b);
+    expect(firstSignal.aborted).toBe(true);
+    await act(async () => second.resolve(b));
+    expect(container.querySelector('dialog[open]')?.textContent).toContain('game-b');
+    await act(async () => first.resolve(a));
+    expect(container.querySelector('dialog[open]')?.textContent).toContain('game-b');
+    expect(container.querySelector('dialog[open]')?.textContent).not.toContain('game-a');
+  });
+
+  it('allows cancelling loading and does not reopen when the response arrives', async () => {
+    await render();
+    const pending = deferredMatch();
+    vi.mocked(fetch).mockReturnValueOnce(pending.promise);
+    await choose(record());
+    const signal = vi.mocked(fetch).mock.lastCall![1]!.signal!;
+    const cancel = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === '取消',
+    )!;
+    await act(async () => cancel.click());
+    expect(signal.aborted).toBe(true);
+    await act(async () => pending.resolve(record()));
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(container.textContent).not.toContain('正在打开对局');
+  });
+
+  it('aborts a match request when player scope changes', async () => {
+    await render();
+    const pending = deferredMatch();
+    vi.mocked(fetch).mockReturnValueOnce(pending.promise);
+    await choose(record());
+    const signal = vi.mocked(fetch).mock.lastCall![1]!.signal!;
+    await render('player-b');
+    expect(signal.aborted).toBe(true);
+    await act(async () => pending.resolve(record()));
+    expect(container.querySelector('dialog')).toBeNull();
+    expect(container.textContent).not.toContain('正在打开对局');
+  });
+
+  it('shows a useful failure and retries the same match', async () => {
+    await render();
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: '对局记录不存在' }), { status: 404 }),
+    );
+    await choose(record());
+    expect(container.textContent).toContain('对局读取失败：对局记录不存在');
+    expect(container.querySelector('dialog')).toBeNull();
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify(record())));
+    const retry = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === '重试',
+    )!;
+    await act(async () => retry.click());
+    expect(container.querySelector('dialog[open]')?.textContent).toContain('game-1');
+    expect(container.textContent).not.toContain('对局读取失败');
   });
 });
 

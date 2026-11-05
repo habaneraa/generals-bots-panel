@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultConfig } from '../../../../packages/contracts/src/index';
+import { defaultConfig, type MatchRecord } from '../../../../packages/contracts/src/index';
 import { api, ApiRequestError } from './client';
 
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
@@ -18,6 +18,7 @@ describe('API 请求契约', () => {
     const id = 'player /?&甲';
     await api.dashboard(signal, id);
     await api.matches({ server: 'bots' }, 1, signal, id);
+    await api.match('match-id', signal, id);
     await api.starHistory({}, signal, id);
     await api.replay('bots', 'game', signal, id);
     await api.save(defaultConfig, id, signal);
@@ -27,7 +28,7 @@ describe('API 请求契约', () => {
       expect(new URL(String(path), 'http://localhost').searchParams.get('playerId')).toBe(id);
       expect(options?.signal).toBe(signal);
     }
-    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(fetchMock).toHaveBeenCalledTimes(8);
   });
 
   it('新增与切换 Player 使用独立接口和直接 userId 字符串', async () => {
@@ -159,6 +160,39 @@ describe('API 请求契约', () => {
     for (const [, options] of fetchMock.mock.calls) {
       expect(options).toEqual({ signal, credentials: 'same-origin' });
     }
+  });
+
+  it('单局详情编码记录 ID 和 Player，并返回完整记录', async () => {
+    const record: MatchRecord = {
+      id: 'match/with?#甲',
+      runId: 'run-id',
+      mode: 'live',
+      server: 'bots',
+      gameId: 'game-id',
+      opponent: 'opponent',
+      startedAt: '2026-10-25T00:00:00.000Z',
+      endedAt: null,
+      outcome: null,
+      turns: 12,
+      replayUrl: null,
+    };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(record)));
+    const signal = new AbortController().signal;
+    const playerId = 'player /?&乙';
+
+    await expect(api.match(record.id, signal, playerId)).resolves.toEqual(record);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/matches/${encodeURIComponent(record.id)}?${new URLSearchParams({ playerId })}`,
+      { signal, credentials: 'same-origin' },
+    );
+  });
+
+  it('单局详情保留不存在记录的 404 状态', async () => {
+    fetchMock.mockResolvedValue(new Response('{"message":"对局记录不存在"}', { status: 404 }));
+
+    await expect(
+      api.match('missing', new AbortController().signal, 'player-a'),
+    ).rejects.toMatchObject({ status: 404, message: '对局记录不存在' });
   });
 
   it('录像标识按路径片段编码，避免特殊字符改变请求目标', async () => {
