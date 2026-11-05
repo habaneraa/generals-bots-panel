@@ -120,6 +120,15 @@ function DashboardContent({
     model;
   const [feedback, setFeedback] = useState<string | null>(null);
   const running = dashboard ? isRunning(dashboard.state.phase) : false;
+  const statsRefreshKey = JSON.stringify(
+    dashboard?.matches.map(({ id, opponent, outcome, startedAt, turns }) => ({
+      id,
+      opponent,
+      outcome,
+      startedAt,
+      turns,
+    })) ?? [],
+  );
   const meta = tabMeta[activeTab];
 
   async function onSave(config: RunConfig) {
@@ -226,7 +235,11 @@ function DashboardContent({
               tabIndex={0}
               hidden={activeTab !== 'stats'}
             >
-              <StatsOverview stats={dashboard.stats} />
+              <StatsOverview
+                stats={dashboard.stats}
+                active={activeTab === 'stats'}
+                refreshKey={statsRefreshKey}
+              />
             </div>
             <div
               id="panel-history"

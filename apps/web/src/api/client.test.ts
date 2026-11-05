@@ -162,6 +162,18 @@ describe('API 请求契约', () => {
     }
   });
 
+  it('完整统计可使用接口允许的 100 条分页大小', async () => {
+    fetchMock.mockResolvedValue(new Response('{}'));
+    const signal = new AbortController().signal;
+
+    await api.matches({}, 2, signal, 'player-a', 100);
+
+    const url = new URL(String(fetchMock.mock.calls[0]![0]), 'http://localhost');
+    expect(url.searchParams.get('page')).toBe('2');
+    expect(url.searchParams.get('pageSize')).toBe('100');
+    expect(url.searchParams.get('playerId')).toBe('player-a');
+  });
+
   it('单局详情编码记录 ID 和 Player，并返回完整记录', async () => {
     const record: MatchRecord = {
       id: 'match/with?#甲',

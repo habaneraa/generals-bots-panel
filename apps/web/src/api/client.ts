@@ -108,8 +108,9 @@ export const api = {
     page: number,
     signal: AbortSignal,
     playerId: string,
+    pageSize = 20,
   ): Promise<MatchPage> => {
-    const query = new URLSearchParams({ page: String(page), pageSize: '20' });
+    const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     for (const [key, value] of Object.entries(filters)) {
       if (value !== undefined) query.set(key, String(value));
     }
