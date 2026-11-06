@@ -61,6 +61,7 @@
 - `types`：0 迷雾、1 平地、2 山、3 城市、4 将军、5 迷雾结构。标准双人入口拒绝特殊地形、队伍与 modifiers。
 - `armies` 迷雾兵力强制为 0；`player_grid` 保留服务器真实玩家编号与负地形值。
 - `turn = server.turn - 1`，一回合最多推理一次，允许跳过推理期间已推进的回合，不补发过期动作。
+  - 若决策帧已过期，控制端会用**同一动作**在紧随其后的下一帧重试一次并重新校验；重试成功不再要求 agent 重算，失败的才记为未提交，并写一条 `warn` 级日志 `未成功提交`。推理期间整个被跳过的回合另记 `跳过回合`。
 - `players` 带 `i, username, team, relation, tiles, total`，`relation` 为 `self` 或 `enemy`。
 - 控制端内部 gameId、连接元数据不混入 observation。
 
