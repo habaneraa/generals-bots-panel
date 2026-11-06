@@ -103,9 +103,20 @@ export interface MatchSnapshot {
 export interface MatchAgentStats {
   observations: number;
   decisions: number;
+  /** 成功提交给服务器的动作，包含过期后在最新帧重试成功的动作。 */
   submittedMoves: number;
+  /** Agent 主动选择 pass 的次数；过期帧上的 pass 仍视为 pass。 */
   passes: number;
+  /** 未提交且非 pass 的动作合计（含过期未重投、重投失败与被拒）。 */
   skippedMoves: number;
+  /** 首次提交即过期（stale）的移动次数；含随后重投成功的，Pass 不计。旧记录未采集时缺省。 */
+  staleMoves?: number;
+  /** skippedMoves 中被本地校验拒绝的动作；旧记录未采集时缺省。 */
+  rejectedMoves?: number;
+  /** 推理期间被服务器推进掉、完全没产生决策的回合数；旧记录未采集时缺省。 */
+  skippedTurns?: number;
+  /** 首次过期后，用同一动作在下一帧重投成功的次数，已计入 submittedMoves。 */
+  retriedMoves?: number;
   splitMoves: number;
   totalLatencyMs: number;
   maxLatencyMs: number;

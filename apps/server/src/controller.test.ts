@@ -6,7 +6,7 @@ import {
   defaultConfig as baseConfig,
   type MatchSnapshot,
 } from '../../../packages/contracts/src/index.js';
-import type { GameConnection, GameEnd } from './game/types.js';
+import type { GameConnection, GameEnd, GameFrame, SubmitStatus } from './game/types.js';
 import { FixtureGame, fixtureObservation } from '../../../test/fixtures/game.js';
 import { AgentProcess } from './agent/process.js';
 import { Controller } from './controller.js';
@@ -205,6 +205,250 @@ describe('run lifecycle with isolated test inputs', () => {
     },
   );
 
+  it('re-submits an expired decision on the latest frame instead of losing the move', async () => {
+    const action = { pass: false, row: 0, col: 0, direction: 3, split: false, value: null };
+    class AdvancingGame extends FixtureGame {
+      private gameId = '';
+      override async join(signal: AbortSignal) {
+        const frame = await super.join(signal);
+        this.gameId = frame.gameId;
+        return frame;
+      }
+      currentFrame() {
+        // 推理期间服务器已推进到第 1 回合。
+        return {
+          gameId: this.gameId,
+          observation: { ...fixtureObservation(), turn: 1 },
+          attackIndex: 0,
+        };
+      }
+      override submit(frame: GameFrame): SubmitStatus {
+        return frame.observation.turn === 1 ? 'sent' : 'stale';
+      }
+    }
+    vi.spyOn(AgentProcess, 'start').mockResolvedValue({
+      begin: vi.fn(),
+      act: vi.fn(async () => action),
+      end: vi.fn(),
+      close: vi.fn(async () => {}),
+    } as unknown as AgentProcess);
+    const { controller, repository } = await setup(new AdvancingGame());
+    controller.start(defaultConfig);
+    await idle(controller);
+    expect(repository.matches().items[0]?.details?.agent).toMatchObject({
+      decisions: 1,
+      staleMoves: 1,
+      retriedMoves: 1,
+      submittedMoves: 1,
+      skippedMoves: 0,
+    });
+  });
+
+  it('logs skipped game turns separately from unsubmitted moves', async () => {
+    let step = 0;
+    const game: GameConnection = {
+      connect: async () => {},
+      join: async () => ({
+        gameId: 'jumping-game',
+        observation: { ...fixtureObservation(), turn: 0 },
+        attackIndex: 0,
+      }),
+      next: async () => {
+        // 第一轮结束后服务器跳过 3 个回合，随后直接终局。
+        if (step++ === 0) {
+          return {
+            gameId: 'jumping-game',
+            observation: { ...fixtureObservation(), turn: 4 },
+            attackIndex: 0,
+          };
+        }
+        return { gameId: 'jumping-game', outcome: 'won', turn: 4 };
+      },
+      submit: () => 'pass',
+      close: () => {},
+    };
+    vi.spyOn(AgentProcess, 'start').mockResolvedValue({
+      begin: vi.fn(),
+      act: vi.fn(async () => ({
+        pass: true,
+        row: 0,
+        col: 0,
+        direction: 0,
+        split: false,
+        value: null,
+      })),
+      end: vi.fn(),
+      close: vi.fn(async () => {}),
+    } as unknown as AgentProcess);
+    const { controller, repository } = await setup(game);
+    controller.start(defaultConfig);
+    await idle(controller);
+    expect(repository.matches().items[0]?.details?.agent).toMatchObject({
+      decisions: 2,
+      skippedTurns: 3,
+      skippedMoves: 0,
+    });
+    expect(controller.dashboard().logs).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        message: expect.stringContaining('跳过回合'),
+      }),
+    );
+    expect(controller.dashboard().logs).not.toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining('未成功提交') }),
+    );
+  });
+
+  it('logs a warning when an expired decision could not be re-submitted', async () => {
+    const action = { pass: false, row: 0, col: 0, direction: 3, split: false, value: null };
+    class NeverValidGame extends FixtureGame {
+      private gameId = '';
+      override async join(signal: AbortSignal) {
+        const frame = await super.join(signal);
+        this.gameId = frame.gameId;
+        return frame;
+      }
+      currentFrame() {
+        return {
+          gameId: this.gameId,
+          observation: { ...fixtureObservation(), turn: 2 },
+          attackIndex: 0,
+        };
+      }
+      override submit(): SubmitStatus {
+        // 服务器已推进两个回合，重投也不再可执行。
+        return 'stale';
+      }
+    }
+    vi.spyOn(AgentProcess, 'start').mockResolvedValue({
+      begin: vi.fn(),
+      act: vi.fn(async () => action),
+      end: vi.fn(),
+      close: vi.fn(async () => {}),
+    } as unknown as AgentProcess);
+    const { controller, repository } = await setup(new NeverValidGame());
+    controller.start(defaultConfig);
+    await idle(controller);
+    expect(repository.matches().items[0]?.details?.agent).toMatchObject({
+      decisions: 1,
+      staleMoves: 1,
+      retriedMoves: 0,
+      submittedMoves: 0,
+      skippedMoves: 1,
+    });
+    expect(controller.dashboard().logs).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        message: expect.stringContaining('未成功提交'),
+      }),
+    );
+  });
+
+  it('keeps the latest turn for a fresh decision when the retry is rejected', async () => {
+    const action = { pass: false, row: 0, col: 0, direction: 3, split: false, value: null };
+    class RejectingRetryGame extends FixtureGame {
+      private gameId = '';
+      private turn = 0;
+      nextCalls = 0;
+      override async join(signal: AbortSignal) {
+        const frame = await super.join(signal);
+        this.gameId = frame.gameId;
+        return frame;
+      }
+      currentFrame() {
+        return {
+          gameId: this.gameId,
+          observation: { ...fixtureObservation(), turn: 1 },
+          attackIndex: 0,
+        };
+      }
+      override async next(lastTurn: number, signal: AbortSignal): Promise<GameEnd> {
+        this.nextCalls++;
+        signal.throwIfAborted();
+        // 重投被拒时 lastTurn 必须停在原帧，agent 才有机会针对第 1 回合重新决策。
+        if (this.nextCalls === 1) {
+          this.turn = 1;
+          return { gameId: this.gameId, outcome: 'won', turn: Math.max(lastTurn, this.turn) };
+        }
+        return { gameId: this.gameId, outcome: 'won', turn: 1 };
+      }
+      override submit(frame: GameFrame): SubmitStatus {
+        return frame.observation.turn === 0 ? 'stale' : 'rejected';
+      }
+    }
+    const game = new RejectingRetryGame();
+    vi.spyOn(AgentProcess, 'start').mockResolvedValue({
+      begin: vi.fn(),
+      act: vi.fn(async () => action),
+      end: vi.fn(),
+      close: vi.fn(async () => {}),
+    } as unknown as AgentProcess);
+    const { controller, repository } = await setup(game);
+    controller.start(defaultConfig);
+    await idle(controller);
+    // 被拒后不应把 lastTurn 推进到第 1 回合；下一轮 next() 仍从 0 号帧起算。
+    expect(game.nextCalls).toBe(1);
+    expect(repository.matches().items[0]?.details?.agent).toMatchObject({
+      decisions: 1,
+      staleMoves: 1,
+      retriedMoves: 0,
+      submittedMoves: 0,
+      skippedMoves: 1,
+      rejectedMoves: 1,
+    });
+  });
+
+  it('does not retry onto a frame that changed the game identity', async () => {
+    const action = { pass: false, row: 0, col: 0, direction: 3, split: false, value: null };
+    class ReshapedGame extends FixtureGame {
+      private gameId = '';
+      submitted: GameFrame[] = [];
+      override async join(signal: AbortSignal) {
+        const frame = await super.join(signal);
+        this.gameId = frame.gameId;
+        return frame;
+      }
+      currentFrame() {
+        const base = fixtureObservation();
+        // 同一 gameId 但棋盘尺寸变了：身份已变，绝不能在它上面重投。
+        return {
+          gameId: this.gameId,
+          observation: {
+            ...base,
+            turn: 1,
+            types: [...base.types, [1, 1, 1]],
+            owners: [...base.owners, [0, 0, 0]],
+            armies: [...base.armies, [0, 0, 0]],
+            player_grid: [...base.player_grid, [-1, -1, -1]],
+          },
+          attackIndex: 0,
+        };
+      }
+      override submit(frame: GameFrame): SubmitStatus {
+        this.submitted.push(frame);
+        return frame.observation.turn === 0 ? 'stale' : 'sent';
+      }
+    }
+    const game = new ReshapedGame();
+    vi.spyOn(AgentProcess, 'start').mockResolvedValue({
+      begin: vi.fn(),
+      act: vi.fn(async () => action),
+      end: vi.fn(),
+      close: vi.fn(async () => {}),
+    } as unknown as AgentProcess);
+    const { controller, repository } = await setup(game);
+    controller.start(defaultConfig);
+    await idle(controller);
+    // 只应发生最初的 stale 提交，绝不会把攻击发到已变形的棋盘上。
+    expect(game.submitted).toHaveLength(1);
+    expect(game.submitted[0]?.observation.turn).toBe(0);
+    expect(repository.matches().items[0]?.details?.agent).toMatchObject({
+      staleMoves: 1,
+      retriedMoves: 0,
+      submittedMoves: 0,
+    });
+  });
+
   it('runs autopilot using a real Node child and persists results', async () => {
     const { controller, repository } = await setup();
     controller.start({ ...defaultConfig, autopilot: true, maxGames: 2, cooldownMs: 0 });
@@ -267,6 +511,9 @@ describe('run lifecycle with isolated test inputs', () => {
       passes: 1,
       submittedMoves: 0,
       skippedMoves: 0,
+      staleMoves: 0,
+      rejectedMoves: 0,
+      retriedMoves: 0,
       splitMoves: 0,
     });
     expect(record?.details?.durationMs).toBeGreaterThanOrEqual(2000);

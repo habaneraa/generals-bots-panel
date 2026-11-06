@@ -69,6 +69,8 @@ export interface GameConnection {
   recordAction?(frame: GameFrame, action: AgentAction, status: SubmitStatus): void;
   getResult?(): GameEnd | null;
   getSnapshot?(): { gameId: string; snapshot: MatchSnapshot; rating?: MatchRating } | null;
+  /** 当前可提交的最新帧；用于把过期决策改投到新回合，不重新推理。 */
+  currentFrame?(): GameFrame | null;
   connect(signal: AbortSignal): Promise<void>;
   join(signal: AbortSignal): Promise<GameFrame | GameEnd>;
   next(lastTurn: number, signal: AbortSignal): Promise<GameFrame | GameEnd>;

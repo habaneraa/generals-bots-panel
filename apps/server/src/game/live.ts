@@ -148,6 +148,15 @@ export class SocketGame implements GameConnection {
     return this.state.getSnapshot();
   }
 
+  currentFrame(): GameFrame | null {
+    const current = this.state.current();
+    if (!current || isGameEnd(current)) return null;
+    if (current.gameId !== this.gameId) return null;
+    // 绑定到已采集的录像帧，重试动作才能落进本地回放。
+    this.recorder.bindFrame(current);
+    return current;
+  }
+
   next(lastTurn: number, signal: AbortSignal): Promise<GameFrame | GameEnd> {
     this.assertOpen(signal);
     if (!this.gameId) return Promise.reject(new Error('Join a game before waiting for a turn'));

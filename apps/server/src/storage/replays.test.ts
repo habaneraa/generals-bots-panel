@@ -7,9 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultConfig } from '../../../../packages/contracts/src/index.js';
 import { parseReplay } from '../../../../packages/contracts/src/replay.js';
 import { fixtureObservation, FixtureGame } from '../../../../test/fixtures/game.js';
+import { AgentProcess } from '../agent/process.js';
 import { createApp } from '../app.js';
 import type { Controller } from '../controller.js';
-import type { GameConnection, GameEnd, GameFrame } from '../game/types.js';
+import type { GameConnection, GameEnd, GameFrame, SubmitStatus } from '../game/types.js';
 import { PlayerManager } from '../player-manager.js';
 import { ReplayRecorder } from '../game/recorder.js';
 import { ReplayStore } from './replays.js';
@@ -209,6 +210,49 @@ describe('replay lifecycle and HTTP API without network games', () => {
         split: true,
         status: dryRun ? 'dry-run' : 'sent',
       },
+    ]);
+  });
+
+  it('records a successful retry in the fallback recording', async () => {
+    const action = { pass: false, row: 0, col: 0, direction: 3, split: false, value: null };
+    class RetryGame extends FixtureGame {
+      private gameId = '';
+      private calls = 0;
+      override async join(signal: AbortSignal) {
+        const frame = await super.join(signal);
+        this.gameId = frame.gameId;
+        return frame;
+      }
+      currentFrame() {
+        return {
+          gameId: this.gameId,
+          observation: { ...fixtureObservation(), turn: 1 },
+          attackIndex: 0,
+        };
+      }
+      override submit(frame: GameFrame): SubmitStatus {
+        this.calls++;
+        return frame.observation.turn === 0 ? 'stale' : 'sent';
+      }
+    }
+    const game = new RetryGame();
+    vi.spyOn(AgentProcess, 'start').mockResolvedValue({
+      begin: vi.fn(),
+      act: vi.fn(async () => action),
+      end: vi.fn(),
+      close: vi.fn(async () => {}),
+    } as unknown as AgentProcess);
+    const { controller, repository } = await setup(game);
+    controller.start(config);
+    await idle(controller);
+    const match = repository.matches().items[0]!;
+    const replay = (await controller.replays.load('bots', match.gameId))!;
+    // 兜底录像必须补采重投所在帧，否则动作无法绑定。
+    expect(replay.frames.map((frame) => frame.turn)).toEqual([0, 1]);
+    // 旧帧的过期尝试与重投成功各记一条，保留完整轨迹。
+    expect(replay.actions).toEqual([
+      expect.objectContaining({ turn: 0, status: 'stale' }),
+      expect.objectContaining({ turn: 1, status: 'sent' }),
     ]);
   });
 

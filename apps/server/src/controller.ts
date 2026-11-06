@@ -20,6 +20,7 @@ import {
   type GameEnd,
   type GameFactory,
   type GameFrame,
+  type SubmitStatus,
 } from './game/types.js';
 import { HttpError, toError } from './errors.js';
 import { RunLog } from './storage/logs.js';
@@ -279,6 +280,10 @@ export class Controller {
           submittedMoves: 0,
           passes: 0,
           skippedMoves: 0,
+          staleMoves: 0,
+          rejectedMoves: 0,
+          skippedTurns: 0,
+          retriedMoves: 0,
           splitMoves: 0,
           totalLatencyMs: 0,
           maxLatencyMs: 0,
@@ -402,6 +407,15 @@ export class Controller {
             if (frame.snapshot) details.last = structuredClone(frame.snapshot);
             if (frame.rating) match.rating = structuredClone(frame.rating);
             details.agent.observations++;
+            // 事件一：推理期间服务器又推进了回合，这些回合没有任何决策。
+            const skippedTurns = frame.observation.turn - lastTurn - 1;
+            if (lastTurn >= 0 && skippedTurns > 0) {
+              details.agent.skippedTurns = (details.agent.skippedTurns ?? 0) + skippedTurns;
+              this.writeLog(
+                'warn',
+                `跳过回合：turn=${lastTurn}→${frame.observation.turn}，共 ${skippedTurns} 个回合未推理`,
+              );
+            }
             this.state.turn = frame.observation.turn;
             match.turns = Math.max(match.turns, frame.observation.turn + 1);
             this.repository.putMatch(match);
@@ -410,28 +424,77 @@ export class Controller {
             const action = await agent.act(frame.observation, signal);
             signal.throwIfAborted();
             this.state.agentLatencyMs = Math.round((performance.now() - started) * 10) / 10;
-            const status = config.dryRun ? 'dry-run' : game.submit(frame, action);
-            game.recordAction?.(frame, action, status);
-            fallback?.recordAction(frame, action, status);
+            const firstStatus = config.dryRun ? 'dry-run' : game.submit(frame, action);
+            game.recordAction?.(frame, action, firstStatus);
+            fallback?.recordAction(frame, action, firstStatus);
+            let status = firstStatus;
+            let actedFrame = frame;
+            let retryStatus: SubmitStatus | null = null;
+            // 决策帧过期时，用同一动作改投到紧随其后的下一帧；submit 会重新校验全部规则。
+            // 只补一个 tick：更大的间隔说明该决策已过时，交给下一轮重新推理。
+            if (firstStatus === 'stale' && !action.pass && !config.dryRun) {
+              const latest = game.currentFrame?.();
+              if (
+                latest &&
+                frameIdentity(latest) === identity &&
+                latest.observation.turn === frame.observation.turn + 1
+              ) {
+                const retried = game.submit(latest, action);
+                retryStatus = retried;
+                if (retried === 'sent') {
+                  // 只有成功的重投才消费最新回合；被拒时保留该回合给 agent 重新决策。
+                  status = retried;
+                  actedFrame = latest;
+                  game.recordAction?.(latest, action, retried);
+                  // 兜底录像没有内置采集，需要先补采这一帧再写入动作。
+                  fallback?.capture(latest);
+                  fallback?.recordAction(latest, action, retried);
+                  details.agent.retriedMoves = (details.agent.retriedMoves ?? 0) + 1;
+                } else if (retried === 'rejected') {
+                  status = retried;
+                }
+              }
+            }
             details.agent.decisions++;
             details.agent.totalLatencyMs += this.state.agentLatencyMs;
             details.agent.maxLatencyMs = Math.max(
               details.agent.maxLatencyMs,
               this.state.agentLatencyMs,
             );
+            // Pass 在过期帧上等价于没动，不算作废的移动。
+            if (firstStatus === 'stale' && !action.pass) {
+              details.agent.staleMoves = (details.agent.staleMoves ?? 0) + 1;
+            }
             if (status === 'sent') {
               details.agent.submittedMoves++;
               if (action.split) details.agent.splitMoves++;
-            } else if (status === 'pass') details.agent.passes++;
-            else details.agent.skippedMoves++;
-            lastTurn = frame.observation.turn;
+            } else if (action.pass) {
+              details.agent.passes++;
+            } else {
+              details.agent.skippedMoves++;
+              if (status === 'rejected') {
+                details.agent.rejectedMoves = (details.agent.rejectedMoves ?? 0) + 1;
+              }
+            }
+            lastTurn = actedFrame.observation.turn;
             this.state.turn = lastTurn;
             match.turns = lastTurn + 1;
             this.repository.putMatch(match);
             this.writeLog(
               'debug',
-              `turn=${lastTurn} action=${JSON.stringify(action)} status=${status} agent=${this.state.agentLatencyMs}ms`,
+              `turn=${lastTurn} action=${JSON.stringify(action)} status=${status}${
+                status === firstStatus ? '' : ` (retry of ${firstStatus})`
+              } agent=${this.state.agentLatencyMs}ms`,
             );
+            // 事件二：动作算出来了，但最终没有被服务器接受（Pass 过期不算损失）。
+            if (!action.pass && (status === 'stale' || status === 'rejected')) {
+              this.writeLog(
+                'warn',
+                `未成功提交：turn=${frame.observation.turn} action=${JSON.stringify(action)} status=${status}${
+                  retryStatus === null ? '' : ` retry=${retryStatus}`
+                } agent=${this.state.agentLatencyMs}ms`,
+              );
+            }
             current = await game.next(lastTurn, signal);
             if (!isGameEnd(current)) fallback?.capture(current);
           }
