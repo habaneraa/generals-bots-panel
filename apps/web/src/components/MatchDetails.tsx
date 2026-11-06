@@ -125,25 +125,32 @@ function PlayerCard({ player, isWinner }: { player: MatchPlayerSnapshot; isWinne
 }
 
 function AgentStats({ agent }: { agent: MatchAgentStats }) {
-  const metrics: Array<[string, string]> = [
-    ['观察', agent.observations.toLocaleString('zh-CN')],
-    ['策略步数', agent.decisions.toLocaleString('zh-CN')],
-    ['已提交', agent.submittedMoves.toLocaleString('zh-CN')],
-    ['Pass', agent.passes.toLocaleString('zh-CN')],
-    ['跳过', agent.skippedMoves.toLocaleString('zh-CN')],
-    ['分兵', agent.splitMoves.toLocaleString('zh-CN')],
-    ['总耗时', formatMilliseconds(agent.totalLatencyMs)],
+  const optional = (value: number | undefined): string =>
+    value === undefined ? '—' : value.toLocaleString('zh-CN');
+  const metrics: Array<[string, string, string?]> = [
+    ['观察', agent.observations.toLocaleString('zh-CN'), '控制器处理的战局帧数'],
+    ['策略步数', agent.decisions.toLocaleString('zh-CN'), 'Agent 实际做出决策的次数'],
+    ['已提交', agent.submittedMoves.toLocaleString('zh-CN'), '成功提交给服务器的动作'],
+    ['Pass', agent.passes.toLocaleString('zh-CN'), 'Agent 主动选择跳过本回合'],
+    ['跳过回合', optional(agent.skippedTurns), '推理期间被服务器推进掉、没有决策的回合数'],
+    ['过期', optional(agent.staleMoves), '首次提交即过期的移动次数（含随后重投成功的）'],
+    ['重试成功', optional(agent.retriedMoves), '过期后用同一动作在下一帧重投成功'],
+    ['未提交', agent.skippedMoves.toLocaleString('zh-CN'), '最终没被服务器接受的移动合计'],
+    ['其中被拒', optional(agent.rejectedMoves), '被本地规则校验拒绝的次数'],
+    ['分兵', agent.splitMoves.toLocaleString('zh-CN'), '已提交动作中的半兵次数'],
+    ['总耗时', formatMilliseconds(agent.totalLatencyMs), '全部策略步的推理耗时合计'],
     [
       '平均耗时',
       agent.decisions > 0 ? formatMilliseconds(agent.totalLatencyMs / agent.decisions) : '—',
+      '总耗时 ÷ 策略步数',
     ],
-    ['最大耗时', formatMilliseconds(agent.maxLatencyMs)],
+    ['最大耗时', formatMilliseconds(agent.maxLatencyMs), '单步推理耗时的峰值'],
   ];
 
   return (
-    <dl className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-[2px] border border-line bg-line sm:grid-cols-9">
-      {metrics.map(([label, value]) => (
-        <div key={label} className="bg-surface px-2 py-1.5">
+    <dl className="mt-2 grid grid-cols-3 gap-px overflow-hidden rounded-[2px] border border-line bg-line sm:grid-cols-6">
+      {metrics.map(([label, value, title]) => (
+        <div key={label} className="bg-surface px-2 py-1.5" title={title}>
           <dt className="text-[9px] text-faint">{label}</dt>
           <dd className="mt-0.5 whitespace-nowrap font-mono text-[10.5px] tabular text-ink">
             {value}
@@ -264,7 +271,10 @@ export function MatchDetails({ match }: { match: MatchRecord }) {
               <span className="text-[9.5px] text-faint">提交不代表服务器执行</span>
             </div>
             <AgentStats agent={details.agent} />
-            <p className="mt-1.5 text-[9.5px] text-faint">平均耗时按策略步数计算。</p>
+            <p className="mt-1.5 text-[9.5px] text-faint">
+              「跳过回合」是推理期间被服务器推进掉、完全没有决策的回合；「未提交」是做出了决策但最终没被服务器接受。平均耗时按策略步数计算；旧记录未采集的细分项显示
+              —。
+            </p>
           </section>
 
           <div className="flex flex-wrap items-start justify-between gap-2 border-t border-line pt-2 text-[9.5px] text-faint">
