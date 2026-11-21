@@ -48,6 +48,16 @@ describe('built web assets', () => {
     expect(api.statusCode).toBe(404);
     expect(api.json()).toEqual({ message: '接口不存在' });
   });
+
+  it.each(['GET', 'HEAD'] as const)(
+    'returns 404 for missing built assets on %s',
+    async (method) => {
+      const { app } = await setup();
+      const response = await app.inject({ method, url: '/assets/stale.js?v=1', headers });
+      expect(response.statusCode).toBe(404);
+      expect(response.headers['content-type'] ?? '').not.toContain('text/html');
+    },
+  );
 });
 
 describe('HTTP error boundary', () => {

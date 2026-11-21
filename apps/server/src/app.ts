@@ -203,6 +203,8 @@ export async function createApp(manager: PlayerManager, webDir: string, port = D
   if (hasWeb) await app.register(fastifyStatic, { root: resolve(webDir) });
   app.setNotFoundHandler((request, reply) => {
     if (request.url.startsWith('/api/')) return reply.code(404).send({ message: '接口不存在' });
+    if (request.url.startsWith('/assets/'))
+      return reply.code(404).send({ message: '静态资源不存在' });
     if (hasWeb && (request.method === 'GET' || request.method === 'HEAD'))
       return reply.sendFile('index.html');
     return reply.code(404).send({
