@@ -14,7 +14,7 @@ const socket = vi.hoisted(() => ({
   sent: [] as unknown[][],
   joined: 0,
   player: 0,
-  openingArmy: 10,
+  openingArmy: 1000,
 }));
 vi.mock('./game/socket.js', () => ({
   abortError: (signal: AbortSignal) => signal.reason,
@@ -53,7 +53,7 @@ beforeEach(() => {
   socket.sent = [];
   socket.joined = 0;
   socket.player = 0;
-  socket.openingArmy = 10;
+  socket.openingArmy = 1000;
 });
 
 async function connected() {
@@ -103,7 +103,7 @@ describe('automatic surrender outside the agent process', () => {
       expect(entries).toHaveLength(1);
       expect(entries[0]).toMatchObject({
         level: 'info',
-        message: '自动投降：兵力 0/1000，领地 1/1，低于敌方的 1%',
+        message: '自动投降：兵力 0/1000，低于敌方的 20%',
       });
       const runId = dashboard.state.run!.id;
       expect(new RunLog(runId, repository.logPath(runId)).tail()).toContainEqual(entries[0]);
@@ -131,11 +131,12 @@ describe('automatic surrender outside the agent process', () => {
 
   it.each([
     [10, 1001, 1, 1],
-    [100, 100, 1, 101],
+    [19, 100, 100, 1],
+    [10, 1000, 1, 100],
+    [11, 1000, 2, 100],
     [1, 101, 1, 101],
     [0, 1, 1, 1],
-    [1, 1, 0, 1],
-  ])('surrenders when either score is below 1%%: %j/%j army, %j/%j land', async (...scores) => {
+  ])('surrenders when army is below 20%%: %j/%j army, %j/%j land', async (...scores) => {
     const { game } = await connected();
     update(...scores);
     expect(surrenders()).toEqual([['surrender']]);
@@ -143,12 +144,13 @@ describe('automatic surrender outside the agent process', () => {
   });
 
   it.each([
-    [10, 1000, 1, 100],
-    [11, 1000, 2, 100],
+    [20, 100, 1, 100],
     [1000, 1, 100, 1],
+    [100, 100, 1, 101],
+    [20, 100, 0, 100],
     [1, 0, 1, 0],
     [0, 0, 0, 0],
-  ])('does not surrender at or above 1%%: %j/%j army, %j/%j land', async (...scores) => {
+  ])('does not surrender at or above 20%%: %j/%j army, %j/%j land', async (...scores) => {
     const { game } = await connected();
     update(...scores);
     expect(surrenders()).toEqual([]);

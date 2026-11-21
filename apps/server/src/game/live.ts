@@ -73,13 +73,11 @@ export class SocketGame implements GameConnection {
                 me.land !== null &&
                 enemy?.army != null &&
                 enemy.land !== null &&
-                (me.army * 100 < enemy.army || me.land * 100 < enemy.land)
+                me.army * 5 < enemy.army
               ) {
                 this.surrenderRequested = true;
                 this.socket.emit('surrender');
-                this.log?.(
-                  `自动投降：兵力 ${me.army}/${enemy.army}，领地 ${me.land}/${enemy.land}，低于敌方的 1%`,
-                );
+                this.log?.(`自动投降：兵力 ${me.army}/${enemy.army}，低于敌方的 20%`);
               }
             }
           }
